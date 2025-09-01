@@ -1,0 +1,7 @@
+type,name,amount,rate,duration,category,fixed_float,float_share,repricing_bucket,deposit_beta,stability
+asset,Loans,120000000,0.06,3.0,HTM,fixed,0.40,3-12m,,
+asset,AFS_Bonds,60000000,0.04,5.0,AFS,fixed,0.00,>3y,,
+asset,Cash,20000000,0.02,0.1,HQLA,float,1.00,0-1m,,
+liability,Deposits,170000000,0.01,1.5,DEPOSITS,float,1.00,0-1m,0.30,core
+liability,Wholesale,15000000,0.02,0.5,WHOLESALE,float,1.00,0-1m,1.00,noncore
+equity,Equity,15000000,0.00,0.0,EQUITY,fixed,0.00,>3y,,
