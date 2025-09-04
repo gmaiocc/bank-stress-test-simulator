@@ -4,7 +4,25 @@ import { Upload, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
 
+// ---------- Formatting helpers (inline) ----------
+const fmtMoney = (n: number) =>
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+const fmtPct = (x: number, digits = 1) => `${x.toFixed(digits)}%`;
+const fmtX = (x: number, digits = 2) => `${x.toFixed(digits)}x`;
+
+// ---------- Types ----------
 type Row = Record<string, string | number | null>;
 
 type ScenarioOut = {
@@ -150,7 +168,6 @@ export default function App() {
         }),
       });
       if (!resp.ok) {
-        // try to extract text/json for better error
         const text = await resp.text();
         throw new Error(text || "API returned an error");
       }
@@ -188,6 +205,12 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  // Sort results by shock for charts
+  const sortedResults = useMemo(
+    () => [...results].sort((a, b) => a.shock_bps - b.shock_bps),
+    [results]
+  );
 
   return (
     <div className="min-h-screen">
@@ -368,7 +391,16 @@ export default function App() {
                   aria-label="Shocks (bps)"
                 />
                 <Button onClick={runStressTest} disabled={loading}>
-                  {loading ? "Running..." : "Run stress test"}
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-3 w-3 animate-pulse rounded-full bg-neutral-300" />
+                      <span className="h-3 w-3 animate-pulse rounded-full bg-neutral-300 [animation-delay:150ms]" />
+                      <span className="h-3 w-3 animate-pulse rounded-full bg-neutral-300 [animation-delay:300ms]" />
+                      Running...
+                    </span>
+                  ) : (
+                    "Run stress test"
+                  )}
                 </Button>
               </div>
 
@@ -387,38 +419,104 @@ export default function App() {
             <CardHeader>
               <CardTitle>Results</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              {/* KPI Cards */}
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="rounded-xl border border-neutral-800 p-4">
                   <div className="text-sm text-neutral-400">Equity</div>
-                  <div className="text-xl font-semibold">
-                    {equity.toLocaleString()}
+                  <div className="text-2xl font-semibold">
+                    {fmtMoney(equity)}
                   </div>
                 </div>
                 <div className="rounded-xl border border-neutral-800 p-4">
                   <div className="text-sm text-neutral-400">
                     Best ΔEVE (% equity)
                   </div>
-                  <div className="text-xl font-semibold">
-                    {Math.max(
-                      ...results.map((r) => r.eve_pct_equity * 100)
-                    ).toFixed(1)}
-                    %
+                  <div className="text-2xl font-semibold">
+                    {fmtPct(
+                      Math.max(...results.map((r) => r.eve_pct_equity * 100))
+                    )}
                   </div>
                 </div>
                 <div className="rounded-xl border border-neutral-800 p-4">
                   <div className="text-sm text-neutral-400">
                     Worst ΔEVE (% equity)
                   </div>
-                  <div className="text-xl font-semibold">
-                    {Math.min(
-                      ...results.map((r) => r.eve_pct_equity * 100)
-                    ).toFixed(1)}
-                    %
+                  <div className="text-2xl font-semibold">
+                    {fmtPct(
+                      Math.min(...results.map((r) => r.eve_pct_equity * 100))
+                    )}
                   </div>
                 </div>
               </div>
 
+              {/* Charts */}
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* ΔEVE / Equity */}
+                <div className="rounded-xl border border-neutral-800 p-4">
+                  <div className="mb-2 text-sm text-neutral-300">
+                    ΔEVE / Equity vs shock
+                  </div>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <AreaChart data={sortedResults}>
+                      <CartesianGrid strokeOpacity={0.1} />
+                      <XAxis dataKey="shock_bps" tick={{ fontSize: 12 }} />
+                      <YAxis
+                        tickFormatter={(v) => fmtPct(v * 100)}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <Tooltip
+                        formatter={(val: any, name: any) =>
+                          name === "ΔEVE/Equity"
+                            ? fmtPct((val as number) * 100)
+                            : val
+                        }
+                        labelFormatter={(l) => `Shock: ${l} bps`}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="eve_pct_equity"
+                        name="ΔEVE/Equity"
+                        fillOpacity={0.2}
+                        strokeWidth={2}
+                        activeDot
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* ΔNII */}
+                <div className="rounded-xl border border-neutral-800 p-4">
+                  <div className="mb-2 text-sm text-neutral-300">
+                    ΔNII (12m) vs shock
+                  </div>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={sortedResults}>
+                      <CartesianGrid strokeOpacity={0.1} />
+                      <XAxis dataKey="shock_bps" tick={{ fontSize: 12 }} />
+                      <YAxis tickFormatter={fmtMoney} tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(val: any, name: any) =>
+                          name === "ΔNII (12m)"
+                            ? fmtMoney(val as number)
+                            : val
+                        }
+                        labelFormatter={(l) => `Shock: ${l} bps`}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="nii_delta"
+                        name="ΔNII (12m)"
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Table */}
               <div className="overflow-auto rounded-xl border border-neutral-800">
                 <table className="min-w-full text-sm">
                   <thead className="sticky top-0 bg-neutral-900/90">
@@ -453,22 +551,40 @@ export default function App() {
                           {r.shock_bps}
                         </td>
                         <td className="px-3 py-2 border-b border-neutral-900/50">
-                          {r.eve_change.toLocaleString()}
+                          {fmtMoney(r.eve_change)}
+                        </td>
+                        <td
+                          className={`px-3 py-2 border-b border-neutral-900/50 ${
+                            r.eve_pct_equity >= 0
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }`}
+                        >
+                          {fmtPct(r.eve_pct_equity * 100)}
+                        </td>
+                        <td
+                          className={`px-3 py-2 border-b border-neutral-900/50 ${
+                            r.nii_delta >= 0
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }`}
+                        >
+                          {fmtMoney(r.nii_delta)}
                         </td>
                         <td className="px-3 py-2 border-b border-neutral-900/50">
-                          {(r.eve_pct_equity * 100).toFixed(1)}%
+                          {fmtMoney(r.lcr_hqla)}
                         </td>
                         <td className="px-3 py-2 border-b border-neutral-900/50">
-                          {r.nii_delta.toLocaleString()}
+                          {fmtMoney(r.lcr_outflows)}
                         </td>
-                        <td className="px-3 py-2 border-b border-neutral-900/50">
-                          {r.lcr_hqla.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2 border-b border-neutral-900/50">
-                          {r.lcr_outflows.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2 border-b border-neutral-900/50">
-                          {r.lcr_coverage.toFixed(2)}x
+                        <td
+                          className={`px-3 py-2 border-b border-neutral-900/50 ${
+                            r.lcr_coverage >= 1
+                              ? "text-emerald-300"
+                              : "text-red-300"
+                          }`}
+                        >
+                          {fmtX(r.lcr_coverage)}
                         </td>
                       </tr>
                     ))}
