@@ -73,85 +73,103 @@ export default function App() {
     <div className="min-h-screen">
       <div className="container max-w-6xl py-8 space-y-6">
         <header className="flex items-center justify-between">
-          <h1 className="text-3xl font-semibold tracking-tight">Bank Stress Test — CSV Uploader</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Bank Stress Test Simulator</h1>
           <Badge variant="secondary" className="text-xs">v0.1</Badge>
         </header>
 
-        {/* Upload */}
-        <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" /> Upload CSV
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="md:col-span-2">
-                <label className="block text-sm mb-1">CSV file</label>
-                <input
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={onFileChange}
-                  className="w-full text-sm rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-800 file:text-neutral-100"
-                />
-                {fileName && <p className="text-xs text-neutral-400 mt-1">Selected: {fileName}</p>}
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Delimiter</label>
-                <select
-                  value={delimiter}
-                  onChange={(e) => setDelimiter(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
-                >
-                  <option value=",">Comma (,)</option>
-                  <option value=";">Semicolon (;)</option>
-                  <option value="\t">Tab (\t)</option>
-                </select>
-                <label className="mt-3 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={headerRow}
-                    onChange={(e) => setHeaderRow(e.target.checked)}
-                    className="h-4 w-4 accent-white"
-                  />
-                  First row contains headers
-                </label>
-              </div>
-            </div>
-            {error && (
-              <div className="rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-sm text-red-200">
-                {error}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+{/* Upload + Validation (combined) */}
+<Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <Upload className="h-5 w-5" /> Upload CSV
+    </CardTitle>
+  </CardHeader>
+  <CardContent className="space-y-6">
+    {/* Upload controls */}
+    <div className="grid gap-4 md:grid-cols-3">
+      <div className="md:col-span-2">
+        <label className="block text-sm mb-1">CSV file</label>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          onChange={onFileChange}
+          className="w-full text-sm rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-800 file:text-neutral-100"
+        />
+        {fileName && (
+          <p className="text-xs text-neutral-400 mt-1">Selected: {fileName}</p>
+        )}
+      </div>
 
-        {/* Validation */}
-        <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
-          <CardHeader><CardTitle>Schema validation</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {REQUIRED_COLS.map((c) => (
-                <Badge
-                  key={c}
-                  className={`rounded-full border ${headers.includes(c)
-                    ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
-                    : "bg-red-500/20 text-red-200 border-red-700"}`}
-                >
-                  {c}
-                </Badge>
-              ))}
-            </div>
-            {headers.length > 0 && (
-              <p className="text-sm text-neutral-400">
-                Optional: {OPTIONAL_COLS.join(", ")}
-                {optionalMissing.length > 0 && (
-                  <span className="block text-xs mt-1">Not present: {optionalMissing.join(", ")}</span>
-                )}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      <div>
+        <label className="block text-sm mb-1">Delimiter</label>
+        <select
+          value={delimiter}
+          onChange={(e) => setDelimiter(e.target.value)}
+          className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+        >
+          <option value=",">Comma (,)</option>
+          <option value=";">Semicolon (;)</option>
+          <option value="\t">Tab (\t)</option>
+        </select>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={headerRow}
+            onChange={(e) => setHeaderRow(e.target.checked)}
+            className="h-4 w-4 accent-white"
+          />
+          First row contains headers
+        </label>
+      </div>
+    </div>
+
+    {error && (
+      <div className="rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-sm text-red-200">
+        {error}
+      </div>
+    )}
+
+    {/* Divider */}
+    <div className="h-px w-full bg-neutral-800" />
+
+    {/* Schema validation (now inside the same card) */}
+    <div className="space-y-3">
+      <h3 className="text-base font-medium">Schema validation</h3>
+      <div className="flex flex-wrap gap-2">
+        {REQUIRED_COLS.map((c) => (
+          <Badge
+            key={c}
+            className={`rounded-full border ${
+              headers.includes(c)
+                ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
+                : "bg-red-500/20 text-red-200 border-red-700"
+            }`}
+          >
+            {c}
+          </Badge>
+        ))}
+      </div>
+
+      {headers.length > 0 && (
+        <>
+          <p className="text-sm text-neutral-400">
+            Optional: {OPTIONAL_COLS.join(", ")}
+          </p>
+          {optionalMissing.length > 0 && (
+            <p className="text-xs text-neutral-500">
+              Not present: {optionalMissing.join(", ")}
+            </p>
+          )}
+          {requiredMissing.length > 0 && (
+            <p className="text-sm text-red-400">
+              Missing required: {requiredMissing.join(", ")}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  </CardContent>
+</Card>
 
         {/* Preview */}
         <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
