@@ -50,10 +50,11 @@ npm run dev
 ---
 
 ## Example CSV
-
+```bash
 type,name,amount,rate,duration,category,fixed_float,float_share,repricing_bucket,stability
 asset,Loans,120000000,0.06,3,HTM,fixed,0.4,3-12m,
 asset,AFS_Bonds,60000000,0.04,5,AFS,fixed,0.0,>3y,
 asset,Cash,20000000,0.02,0.1,HQLA,float,1.0,0-1m,
 liability,Deposits,170000000,0.01,1.5,DEPOSITS,float,1.0,0-1m,core
 equity,Equity,15000000,0,0,EQUITY,fixed,0.0,>3y,
+```
