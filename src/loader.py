@@ -7,7 +7,6 @@ def load_balance_sheet(path: str) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing columns: {missing}")
 
-    # Normalise
     df["type"] = df["type"].str.lower()
     df["fixed_float"] = df["fixed_float"].str.lower()
     df["float_share"] = df["float_share"].fillna(0.0).astype(float)

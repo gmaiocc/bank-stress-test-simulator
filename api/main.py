@@ -9,20 +9,17 @@ from io import StringIO
 # Your modules
 from src.eve import eve_change
 from src.nii import project_nii_12m
-# from src.liquidity import simple_liquidity_stress  # not used directly (we inline params)
 
 app = FastAPI(title="Bank Stress Test API", version="0.1.0")
 
-# --- CORS (frontend Vite em 5173) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
-    allow_methods=["*"],   # inclui OPTIONS/POST
+    allow_methods=["*"],  
     allow_headers=["*"],
 )
 
-# --- Health / root ---
 @app.get("/")
 def root():
     return {"status": "ok", "message": "Bank Stress Test API. See /docs"}
@@ -31,7 +28,6 @@ def root():
 def health():
     return {"status": "healthy"}
 
-# --- Models ---
 class StressParams(BaseModel):
     shocks_bps: List[int] = Field(default=[-200, -100, 0, 100, 200, 300])
     afs_haircut: float = Field(default=0.10, ge=0.0, le=0.5)
@@ -57,7 +53,6 @@ class StressResponse(BaseModel):
     equity: float
     results: List[ScenarioResult]
 
-# --- Helpers ---
 def _read_csv_text(csv_text: str) -> pd.DataFrame:
     df = pd.read_csv(StringIO(csv_text))
     required = {"type","name","amount","rate","duration","category","fixed_float","float_share","repricing_bucket"}
@@ -90,7 +85,6 @@ def _liq_with_params(df_in: pd.DataFrame, afs_haircut: float, deposit_runoff: fl
     coverage = hqla / stressed_outflows if stressed_outflows else float("inf")
     return {"hqla": float(hqla), "stressed_outflows": float(stressed_outflows), "coverage_ratio": float(coverage)}
 
-# --- Preflight explícito (evita 405 no OPTIONS /stress) ---
 @app.options("/stress")
 def options_stress():
     return Response(status_code=204)
@@ -99,13 +93,11 @@ def options_stress():
 def options_stress_slash():
     return Response(status_code=204)
 
-# --- Endpoint principal ---
 @app.post("/stress", response_model=StressResponse)
 @app.post("/stress/", response_model=StressResponse)
 def run_stress(req: StressRequest):
     df = _read_csv_text(req.csv_text)
 
-    # Override deposit betas by stability (core vs noncore)
     def _beta(row):
         if row["type"] == "liability" and row["category"] == "DEPOSITS":
             st = (row.get("stability") or "").lower()
@@ -119,7 +111,7 @@ def run_stress(req: StressRequest):
 
     for s in req.params.shocks_bps:
         eve_res = eve_change(df, s)
-        nii_res = project_nii_12m(df, s)  # (podes incluir lag no futuro)
+        nii_res = project_nii_12m(df, s)
         liq_res = _liq_with_params(df, req.params.afs_haircut, req.params.deposit_runoff)
 
         out_rows.append(ScenarioResult(
