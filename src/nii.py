@@ -6,13 +6,12 @@ def project_nii_12m(df: pd.DataFrame, shock_bps: int) -> dict:
     assets = df[df["type"] == "asset"].copy()
     liabs  = df[df["type"] == "liability"].copy()
 
-    # Baseline NII (aprox simples: rate * amount)
+    # Baseline NII
     baseline_int_income = (assets["rate"] * assets["amount"]).sum()
     baseline_int_exp    = (liabs["rate"]  * liabs["amount"]).sum()
     baseline_nii = baseline_int_income - baseline_int_exp
 
     # After shock
-    # Assets: só parcela flutuante reprecifica totalmente (MVP)
     assets["post_rate"] = assets["rate"] + assets["float_share"] * dy
     # Liabs: depósitos/wholesale com betas
     liabs["post_rate"] = liabs["rate"] + liabs["deposit_beta"] * dy

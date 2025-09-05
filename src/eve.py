@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 
 def _delta_pv_duration(amount: float, duration: float, shock_bps: int) -> float:
-    dy = shock_bps / 10000.0  # bps -> decimal
-    # ΔPV ≈ -D * Δy * Amount (aproximação)
+    dy = shock_bps / 10000.0  
+    # ΔPV ≈ -D * Δy * Amount 
     return -duration * dy * amount
 
 def eve_change(df: pd.DataFrame, shock_bps: int) -> dict:
@@ -15,7 +15,7 @@ def eve_change(df: pd.DataFrame, shock_bps: int) -> dict:
     assets["delta_pv"] = assets.apply(
         lambda r: _delta_pv_duration(r["amount"], r["duration"], shock_bps), axis=1
     )
-    # Liabilities ΔPV (sinal inverso na ótica do banco: PV de passivos a subir taxas desce => melhora EVE)
+    # Liabilities ΔPV
     liabs["delta_pv"] = liabs.apply(
         lambda r: -_delta_pv_duration(r["amount"], r["duration"], shock_bps), axis=1
     )
