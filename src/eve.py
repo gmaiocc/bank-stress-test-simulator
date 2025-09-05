@@ -20,6 +20,7 @@ def eve_change(df: pd.DataFrame, shock_bps: int) -> dict:
         lambda r: -_delta_pv_duration(r["amount"], r["duration"], shock_bps), axis=1
     )
 
+
     total_assets_dp = assets["delta_pv"].sum()
     total_liabs_dp = liabs["delta_pv"].sum()
 
