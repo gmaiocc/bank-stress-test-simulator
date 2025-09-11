@@ -212,7 +212,7 @@ export default function App() {
             Bank Stress Test Simulator
           </h1>
           <Badge variant="secondary" className="text-xs">
-            v0.3.1
+            v0.4.0
           </Badge>
         </header>
 
