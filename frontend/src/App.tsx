@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import Papa from "papaparse";
-import { Upload, FileText } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,17 +19,18 @@ import {
   Legend,
 } from "recharts";
 
+/* ---------- format helpers ---------- */
 const fmtMoney = (n: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
 const fmtPct = (x: number, digits = 1) => `${x.toFixed(digits)}%`;
 const fmtX = (x: number, digits = 2) => `${x.toFixed(digits)}x`;
 
+/* ---------- types ---------- */
 type Row = Record<string, string | number | null>;
-
 type ScenarioOut = {
   shock_bps: number;
   eve_change: number;
-  eve_pct_equity: number; 
+  eve_pct_equity: number; // decimal
   nii_delta: number;
   lcr_hqla: number;
   lcr_outflows: number;
@@ -50,24 +51,32 @@ const REQUIRED_COLS = [
 
 const OPTIONAL_COLS = ["deposit_beta", "stability", "convexity"];
 
+/* ===================================================== */
 export default function App() {
-
+  // CSV preview state
   const [rows, setRows] = useState<Row[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
 
+  // Preview modal
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Parser options
   const [delimiter, setDelimiter] = useState(",");
   const [headerRow, setHeaderRow] = useState(true);
 
+  // Parameters
   const [afsHaircut, setAfsHaircut] = useState<number>(0.1);
   const [depositRunoff, setDepositRunoff] = useState<number>(0.15);
   const [betaCore, setBetaCore] = useState<number>(0.3);
   const [betaNoncore, setBetaNoncore] = useState<number>(0.6);
   const [shocks, setShocks] = useState<number[]>([-200, -100, 0, 100, 200]);
 
+  // Raw CSV (to send to API)
   const [rawCsv, setRawCsv] = useState<string>("");
 
+  // API results
   const [equity, setEquity] = useState<number>(0);
   const [results, setResults] = useState<ScenarioOut[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -82,6 +91,7 @@ export default function App() {
     [headers]
   );
 
+  /* ---------- CSV upload/parse ---------- */
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -89,11 +99,13 @@ export default function App() {
     setFileName(f.name);
     setError("");
 
+    // keep raw CSV for backend
     const reader = new FileReader();
     reader.onload = () => setRawCsv(String(reader.result || ""));
     reader.onerror = () => setRawCsv("");
     reader.readAsText(f);
 
+    // parse for preview/validation
     Papa.parse<Row>(f, {
       header: headerRow,
       delimiter,
@@ -135,6 +147,7 @@ export default function App() {
   const previewCount = 100;
   const previewRows = useMemo(() => rows.slice(0, previewCount), [rows]);
 
+  /* ---------- API call ---------- */
   async function runStressTest() {
     setApiError("");
     setResults([]);
@@ -203,6 +216,7 @@ export default function App() {
     [results]
   );
 
+  /* ===================== UI ===================== */
   return (
     <div className="min-h-screen">
       <div className="container max-w-6xl py-8 space-y-6">
@@ -216,7 +230,7 @@ export default function App() {
           </Badge>
         </header>
 
-        {/* Layout: sidebar (params) + main */}
+        {/* Layout: sidebar + main */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Sidebar */}
           <aside className="lg:col-span-3">
@@ -294,6 +308,17 @@ export default function App() {
                     />
                   </label>
 
+                  {/* Preview + Run + Export (agora todos juntos) */}
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => setPreviewOpen(true)}
+                    disabled={headers.length === 0}
+                    title={headers.length === 0 ? "Upload a CSV first" : "Preview parsed CSV"}
+                  >
+                    Preview CSV
+                  </Button>
+
                   <Button onClick={runStressTest} disabled={loading} className="w-full">
                     {loading ? (
                       <span className="inline-flex items-center gap-2">
@@ -307,6 +332,16 @@ export default function App() {
                     )}
                   </Button>
 
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={exportResultsCsv}
+                    disabled={results.length === 0}
+                    title={results.length === 0 ? "Run a stress test first" : "Export results as CSV"}
+                  >
+                    Export CSV
+                  </Button>
+
                   {apiError && (
                     <div className="rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-xs text-red-200">
                       {apiError}
@@ -317,7 +352,7 @@ export default function App() {
             </div>
           </aside>
 
-          {/* Main content */}
+          {/* Main */}
           <main className="lg:col-span-9 space-y-6">
             {/* Upload + validation */}
             <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
@@ -372,38 +407,81 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Schema (compact) */}
                 {headers.length > 0 && (
-                  <>
-                    <div className="h-px w-full bg-neutral-800" />
-                    <div>
-                      <h3 className="text-base font-medium mb-2">Schema validation</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {REQUIRED_COLS.map((c) => (
-                          <Badge
-                            key={c}
-                            className={`rounded-full border ${
-                              headers.includes(c)
-                                ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
-                                : "bg-red-500/20 text-red-200 border-red-700"
-                            }`}
-                          >
-                            {c}
-                          </Badge>
-                        ))}
-                      </div>
-                      <div className="mt-2 text-xs text-neutral-500">
-                        Optional: {OPTIONAL_COLS.join(", ")}
-                        {optionalMissing.length > 0 && (
-                          <> • Not present: {optionalMissing.join(", ")}</>
-                        )}
-                        {requiredMissing.length > 0 && (
-                          <div className="text-red-400 mt-1">
-                            Missing required: {requiredMissing.join(", ")}
+                  <div className="rounded-xl border border-neutral-800/60 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium">Schema</div>
+
+                      <div className="flex items-center gap-2 text-xs">
+                        <span
+                          className={`px-2 py-1 rounded-full border ${
+                            requiredMissing.length === 0
+                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-600"
+                              : "bg-red-500/15 text-red-300 border-red-600"
+                          }`}
+                          title="Required columns status"
+                        >
+                          Required {REQUIRED_COLS.length - requiredMissing.length}/
+                          {REQUIRED_COLS.length}
+                        </span>
+
+                        <span
+                          className="px-2 py-1 rounded-full border bg-neutral-800 text-neutral-300 border-neutral-700"
+                          title="Optional columns status"
+                        >
+                          Optional {OPTIONAL_COLS.length - optionalMissing.length}/
+                          {OPTIONAL_COLS.length}
+                        </span>
+
+                        <details className="ml-2">
+                          <summary className="cursor-pointer select-none text-neutral-400 hover:text-neutral-200">
+                            Details
+                          </summary>
+
+                          <div className="mt-3">
+                            <div className="text-xs mb-1 text-neutral-400">Required</div>
+                            <div className="flex flex-wrap gap-2">
+                              {REQUIRED_COLS.map((c) => (
+                                <span
+                                  key={c}
+                                  className={`rounded-full border px-2 py-1 text-[11px] ${
+                                    headers.includes(c)
+                                      ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
+                                      : "bg-red-500/20 text-red-200 border-red-700"
+                                  }`}
+                                >
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="text-xs mt-3 mb-1 text-neutral-400">Optional</div>
+                            <div className="flex flex-wrap gap-2">
+                              {OPTIONAL_COLS.map((c) => (
+                                <span
+                                  key={c}
+                                  className={`rounded-full border px-2 py-1 text-[11px] ${
+                                    headers.includes(c)
+                                      ? "bg-neutral-800 text-neutral-200 border-neutral-700"
+                                      : "bg-neutral-900 text-neutral-500 border-neutral-800"
+                                  }`}
+                                >
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        )}
+                        </details>
                       </div>
                     </div>
-                  </>
+
+                    {requiredMissing.length > 0 && (
+                      <p className="mt-2 text-xs text-red-300">
+                        Missing required: {requiredMissing.join(", ")}
+                      </p>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -417,7 +495,9 @@ export default function App() {
                 <CardContent className="space-y-6">
                   {/* HQLA vs Outflows */}
                   <div className="rounded-2xl border border-neutral-800 p-4">
-                    <div className="mb-2 text-sm text-neutral-300">HQLA vs Outflows by shock</div>
+                    <div className="mb-2 text-sm text-neutral-300">
+                      HQLA vs Outflows by shock
+                    </div>
                     <ResponsiveContainer width="100%" height={280}>
                       <BarChart data={sortedResults} barCategoryGap={24}>
                         <CartesianGrid stroke="rgba(255,255,255,0.05)" />
@@ -440,7 +520,9 @@ export default function App() {
                             color: "#E5E7EB",
                           }}
                           formatter={(val: any, name: any) =>
-                            name === "HQLA" || name === "Outflows" ? fmtMoney(val as number) : val
+                            name === "HQLA" || name === "Outflows"
+                              ? fmtMoney(val as number)
+                              : val
                           }
                           labelFormatter={(l) => `Shock: ${l} bps`}
                         />
@@ -448,16 +530,16 @@ export default function App() {
                         <Bar
                           dataKey="lcr_hqla"
                           name="HQLA"
-                          fill="#34D399"      
-                          stroke="#10B981"   
+                          fill="#34D399"
+                          stroke="#10B981"
                           barSize={18}
                           radius={[6, 6, 0, 0]}
                         />
                         <Bar
                           dataKey="lcr_outflows"
                           name="Outflows"
-                          fill="#F87171"      
-                          stroke="#EF4444"    
+                          fill="#F87171"
+                          stroke="#EF4444"
                           barSize={18}
                           radius={[6, 6, 0, 0]}
                         />
@@ -489,7 +571,9 @@ export default function App() {
                   <div className="grid gap-6 lg:grid-cols-2">
                     {/* ΔEVE / Equity */}
                     <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="mb-2 text-sm text-neutral-300">ΔEVE / Equity vs shock</div>
+                      <div className="mb-2 text-sm text-neutral-300">
+                        ΔEVE / Equity vs shock
+                      </div>
                       <ResponsiveContainer width="100%" height={260}>
                         <AreaChart data={sortedResults}>
                           <CartesianGrid strokeOpacity={0.1} />
@@ -500,7 +584,9 @@ export default function App() {
                           />
                           <Tooltip
                             formatter={(val: any, name: any) =>
-                              name === "ΔEVE/Equity" ? fmtPct((val as number) * 100) : val
+                              name === "ΔEVE/Equity"
+                                ? fmtPct((val as number) * 100)
+                                : val
                             }
                             labelFormatter={(l) => `Shock: ${l} bps`}
                             cursor={{ stroke: "#374151", strokeWidth: 1 }}
@@ -525,7 +611,9 @@ export default function App() {
 
                     {/* ΔNII */}
                     <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="mb-2 text-sm text-neutral-300">ΔNII (12m) vs shock</div>
+                      <div className="mb-2 text-sm text-neutral-300">
+                        ΔNII (12m) vs shock
+                      </div>
                       <ResponsiveContainer width="100%" height={260}>
                         <LineChart data={sortedResults}>
                           <CartesianGrid strokeOpacity={0.1} />
@@ -556,7 +644,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Table */}
+                  {/* Results table */}
                   <div className="overflow-auto rounded-xl border border-neutral-800">
                     <table className="min-w-full text-sm">
                       <thead className="sticky top-0 bg-neutral-900/90">
@@ -603,62 +691,68 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
-
-                  <div>
-                    <Button variant="secondary" onClick={exportResultsCsv}>
-                      Export CSV
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
             )}
-
-            {/* Preview */}
-            <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" /> Preview
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {headers.length === 0 ? (
-                  <p className="text-sm text-neutral-400">Upload a CSV to see a preview.</p>
-                ) : (
-                  <div className="overflow-auto rounded-xl border border-neutral-800 max-h-[60vh]">
-                    <table className="min-w-full text-sm">
-                      <thead className="sticky top-0 bg-neutral-900/90 backdrop-blur">
-                        <tr>
-                          {headers.map((h) => (
-                            <th key={h} className="text-left px-3 py-2 font-semibold border-b border-neutral-800">
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.map((r, idx) => (
-                          <tr key={idx} className="even:bg-neutral-900/40">
-                            {headers.map((h) => (
-                              <td key={h} className="px-3 py-2 border-b border-neutral-900/50">
-                                {String(normalizeCell(h, (r as any)[h]))}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {rows.length > previewCount && (
-                  <p className="text-xs text-neutral-500 mt-2">
-                    Showing first {previewCount} rows of {rows.length}.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
           </main>
         </div>
       </div>
+
+      {/* ---------- Preview Modal ---------- */}
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          {/* overlay */}
+          <div className="absolute inset-0 bg-black/60" onClick={() => setPreviewOpen(false)} />
+          {/* content */}
+          <div className="relative z-10 w-[min(1100px,92vw)] rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-medium">CSV Preview</h3>
+              <button
+                onClick={() => setPreviewOpen(false)}
+                className="rounded-lg border border-neutral-800 px-2 py-1 text-sm hover:bg-neutral-800"
+                aria-label="Close preview"
+              >
+                Close
+              </button>
+            </div>
+
+            {headers.length === 0 ? (
+              <p className="text-sm text-neutral-400">Upload a CSV to see a preview.</p>
+            ) : (
+              <div className="overflow-auto rounded-xl border border-neutral-800 max-h-[70vh]">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 bg-neutral-900/90 backdrop-blur">
+                    <tr>
+                      {headers.map((h) => (
+                        <th key={h} className="text-left px-3 py-2 font-semibold border-b border-neutral-800">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((r, idx) => (
+                      <tr key={idx} className="even:bg-neutral-900/40">
+                        {headers.map((h) => (
+                          <td key={h} className="px-3 py-2 border-b border-neutral-900/50">
+                            {String(normalizeCell(h, (r as any)[h]))}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {rows.length > previewCount && (
+              <p className="text-xs text-neutral-500 mt-2">
+                Showing first {previewCount} rows of {rows.length}.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
