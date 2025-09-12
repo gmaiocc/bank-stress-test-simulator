@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
-import { Upload } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -19,13 +18,33 @@ import {
   Legend,
 } from "recharts";
 
-/* ---------- format helpers ---------- */
 const fmtMoney = (n: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
 const fmtPct = (x: number, digits = 1) => `${x.toFixed(digits)}%`;
 const fmtX = (x: number, digits = 2) => `${x.toFixed(digits)}x`;
 
-/* ---------- types ---------- */
+/* ---- Glassmorphism presets (mais leve) ---- */
+const PANEL =
+  "rounded-2xl border border-white/5 bg-white/3 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+
+/* Base field consistente */
+const FIELD_BASE =
+  "h-10 w-full rounded-xl border border-white/5 bg-white/3 backdrop-blur-sm px-3 text-sm placeholder-white/50 focus:outline-none focus:border-white/15";
+
+/* Numéricos (sem spinners) */
+const FIELD_NUMBER =
+  `${FIELD_BASE} [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`;
+
+/* Texto */
+const FIELD = FIELD_BASE;
+
+/* Select com chevron */
+const SELECT_FIELD = `${FIELD_BASE} pr-9 appearance-none cursor-pointer`;
+
+/* Checkbox consistente */
+const CHECKBOX =
+  "h-4 w-4 rounded border border-white/20 bg-white/10 accent-white/90 focus:outline-none focus:ring-2 focus:ring-white/20";
+
 type Row = Record<string, string | number | null>;
 type ScenarioOut = {
   shock_bps: number;
@@ -48,18 +67,35 @@ const REQUIRED_COLS = [
   "float_share",
   "repricing_bucket",
 ];
-
 const OPTIONAL_COLS = ["deposit_beta", "stability", "convexity"];
 
-/* ===================================================== */
+function BackgroundGlow() {
+  return (
+    <>
+      <div className="fixed inset-0 -z-50 bg-neutral-950" />
+      <div
+        className="pointer-events-none fixed inset-0 -z-40"
+        style={{
+          background: `
+            radial-gradient(1200px 800px at 50% 15%, rgba(59,130,246,0.12), transparent 70%),
+            radial-gradient(1000px 700px at 25% 75%, rgba(96,165,250,0.10), transparent 75%),
+            radial-gradient(900px 600px at 75% 70%, rgba(37,99,235,0.09), transparent 75%),
+            radial-gradient(800px 500px at 15% 40%, rgba(147,197,253,0.08), transparent 70%),
+            radial-gradient(700px 500px at 85% 30%, rgba(29,78,216,0.07), transparent 70%)
+          `,
+        }}
+      />
+    </>
+  );
+}
+
 export default function App() {
   // CSV preview state
   const [rows, setRows] = useState<Row[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
-  const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
 
-  // Preview modal
+  // Modal preview
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Parser options
@@ -73,7 +109,7 @@ export default function App() {
   const [betaNoncore, setBetaNoncore] = useState<number>(0.6);
   const [shocks, setShocks] = useState<number[]>([-200, -100, 0, 100, 200]);
 
-  // Raw CSV (to send to API)
+  // Raw CSV (to send)
   const [rawCsv, setRawCsv] = useState<string>("");
 
   // API results
@@ -91,21 +127,20 @@ export default function App() {
     [headers]
   );
 
-  /* ---------- CSV upload/parse ---------- */
+  /* ---- CSV upload/parse ---- */
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
 
-    setFileName(f.name);
     setError("");
 
-    // keep raw CSV for backend
+    // raw CSV para backend
     const reader = new FileReader();
     reader.onload = () => setRawCsv(String(reader.result || ""));
     reader.onerror = () => setRawCsv("");
     reader.readAsText(f);
 
-    // parse for preview/validation
+    // parse preview
     Papa.parse<Row>(f, {
       header: headerRow,
       delimiter,
@@ -147,7 +182,7 @@ export default function App() {
   const previewCount = 100;
   const previewRows = useMemo(() => rows.slice(0, previewCount), [rows]);
 
-  /* ---------- API call ---------- */
+  /* ---- Run API ---- */
   async function runStressTest() {
     setApiError("");
     setResults([]);
@@ -216,9 +251,71 @@ export default function App() {
     [results]
   );
 
+  // --- Preview: melhorias ---
+  const [previewQuery, setPreviewQuery] = useState("");
+  const [compactRows, setCompactRows] = useState(false);
+
+  const filteredPreviewRows = useMemo(() => {
+    if (!previewQuery.trim()) return previewRows;
+    const q = previewQuery.toLowerCase();
+    return previewRows.filter((r) =>
+      headers.some((h) =>
+        String((r as any)[h] ?? "").toLowerCase().includes(q)
+      )
+    );
+  }, [previewRows, headers, previewQuery]);
+
+  function rowsToCsv(hdrs: string[], rowsArr: Row[]) {
+    const esc = (v: any) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const head = hdrs.map(esc).join(",");
+    const body = rowsArr
+      .map((r) => hdrs.map((h) => esc((r as any)[h])).join(","))
+      .join("\n");
+    return `${head}\n${body}`;
+  }
+
+  function copyPreviewCsv() {
+    const csv = rowsToCsv(headers, filteredPreviewRows as Row[]);
+    navigator.clipboard.writeText(csv).catch(() => {});
+  }
+
+  function downloadPreviewCsv() {
+    const csv = rowsToCsv(headers, filteredPreviewRows as Row[]);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "preview.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // atalhos: Esc fecha | Cmd/Ctrl+F foca a pesquisa
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!previewOpen) return;
+      if (e.key === "Escape") setPreviewOpen(false);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        const el = document.getElementById("preview-search") as
+          | HTMLInputElement
+          | null;
+        el?.focus();
+        el?.select();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewOpen]);
+
   /* ===================== UI ===================== */
   return (
     <div className="min-h-screen">
+      <BackgroundGlow />
+
       <div className="container max-w-6xl py-8 space-y-6">
         {/* Header */}
         <header className="flex items-center justify-between">
@@ -226,20 +323,91 @@ export default function App() {
             Bank Stress Test Simulator
           </h1>
           <Badge variant="secondary" className="text-xs">
-            v0.4.0
+            v0.3.2
           </Badge>
         </header>
 
-        {/* Layout: sidebar + main */}
+        {/* Layout */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Sidebar */}
+          {/* Sidebar (agora inclui Upload) */}
           <aside className="lg:col-span-3">
             <div className="lg:sticky lg:top-6 space-y-6">
-              <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
+              <Card className={PANEL}>
                 <CardHeader>
-                  <CardTitle className="text-base">Parameters</CardTitle>
+                  <CardTitle className="text-base">Data & Parameters</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* === Upload: botão largura total === */}
+                  <div className="space-y-2">
+                    <label className="block text-sm">CSV file</label>
+
+                    <Button
+                      asChild
+                      variant="secondary"
+                      className="w-full justify-center bg-white/10 hover:bg-white/15 border border-white/10"
+                    >
+                      <label
+                        htmlFor="file-upload"
+                        className="cursor-pointer w-full text-center"
+                      >
+                        Choose File
+                      </label>
+                    </Button>
+
+                    <input
+                      id="file-upload"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={onFileChange}
+                      className="hidden"
+                    />
+
+                    {/* Delimiter + checkbox */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs mb-1 opacity-80">
+                          Delimiter
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={delimiter}
+                            onChange={(e) => setDelimiter(e.target.value)}
+                            className={SELECT_FIELD}
+                          >
+                            <option value=",">Comma (,)</option>
+                            <option value=";">Semicolon (;)</option>
+                            <option value="\t">Tab (\t)</option>
+                          </select>
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 20 20"
+                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70"
+                          >
+                            <path
+                              fill="currentColor"
+                              d="M5.5 7.5L10 12l4.5-4.5"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
+                      </div>
+
+                      <label className="mt-6 flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={headerRow}
+                          onChange={(e) => setHeaderRow(e.target.checked)}
+                          className={CHECKBOX}
+                        />
+                        First row contains headers
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* === Parameters === */}
                   <label className="text-sm block">
                     AFS haircut (0–0.5)
                     <input
@@ -249,9 +417,10 @@ export default function App() {
                       max={0.5}
                       value={afsHaircut}
                       onChange={(e) => setAfsHaircut(Number(e.target.value))}
-                      className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                      className={FIELD_NUMBER}
                     />
                   </label>
+
                   <label className="text-sm block">
                     Deposit runoff (0–1)
                     <input
@@ -261,9 +430,10 @@ export default function App() {
                       max={1}
                       value={depositRunoff}
                       onChange={(e) => setDepositRunoff(Number(e.target.value))}
-                      className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                      className={FIELD_NUMBER}
                     />
                   </label>
+
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-sm block">
                       Beta (core)
@@ -274,7 +444,7 @@ export default function App() {
                         max={1}
                         value={betaCore}
                         onChange={(e) => setBetaCore(Number(e.target.value))}
-                        className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                        className={FIELD_NUMBER}
                       />
                     </label>
                     <label className="text-sm block">
@@ -286,7 +456,7 @@ export default function App() {
                         max={1}
                         value={betaNoncore}
                         onChange={(e) => setBetaNoncore(Number(e.target.value))}
-                        className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                        className={FIELD_NUMBER}
                       />
                     </label>
                   </div>
@@ -303,47 +473,60 @@ export default function App() {
                           .filter((n) => !Number.isNaN(n));
                         setShocks(xs);
                       }}
-                      className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                      className={FIELD}
                       placeholder="-200,-100,0,100,200"
                     />
                   </label>
 
-                  {/* Preview + Run + Export (agora todos juntos) */}
-                  <Button
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => setPreviewOpen(true)}
-                    disabled={headers.length === 0}
-                    title={headers.length === 0 ? "Upload a CSV first" : "Preview parsed CSV"}
-                  >
-                    Preview CSV
-                  </Button>
+                  <div className="grid gap-2">
+                    <Button
+                      variant="secondary"
+                      className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                      onClick={() => setPreviewOpen(true)}
+                      disabled={headers.length === 0}
+                      title={
+                        headers.length === 0
+                          ? "Upload a CSV first"
+                          : "Preview parsed CSV"
+                      }
+                    >
+                      Preview CSV
+                    </Button>
 
-                  <Button onClick={runStressTest} disabled={loading} className="w-full">
-                    {loading ? (
-                      <span className="inline-flex items-center gap-2">
-                        <span className="h-3 w-3 animate-pulse rounded-full bg-neutral-300" />
-                        <span className="h-3 w-3 animate-pulse rounded-full bg-neutral-300 [animation-delay:150ms]" />
-                        <span className="h-3 w-3 animate-pulse rounded-full bg-neutral-300 [animation-delay:300ms]" />
-                        Running...
-                      </span>
-                    ) : (
-                      "Run stress test"
-                    )}
-                  </Button>
+                    <Button
+                      onClick={runStressTest}
+                      disabled={loading}
+                      className="w-full"
+                    >
+                      {loading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-3 w-3 animate-pulse rounded-full bg-white/80" />
+                          <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:150ms]" />
+                          <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:300ms]" />
+                          Running...
+                        </span>
+                      ) : (
+                        "Run stress test"
+                      )}
+                    </Button>
 
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={exportResultsCsv}
-                    disabled={results.length === 0}
-                    title={results.length === 0 ? "Run a stress test first" : "Export results as CSV"}
-                  >
-                    Export CSV
-                  </Button>
+                    <Button
+                      variant="secondary"
+                      className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                      onClick={exportResultsCsv}
+                      disabled={results.length === 0}
+                      title={
+                        results.length === 0
+                          ? "Run a stress test first"
+                          : "Export results as CSV"
+                      }
+                    >
+                      Export CSV
+                    </Button>
+                  </div>
 
                   {apiError && (
-                    <div className="rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-xs text-red-200">
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/15 p-3 text-xs text-red-200">
                       {apiError}
                     </div>
                   )}
@@ -354,168 +537,73 @@ export default function App() {
 
           {/* Main */}
           <main className="lg:col-span-9 space-y-6">
-            {/* Upload + validation */}
-            <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="h-5 w-5" /> Upload CSV
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm mb-1">CSV file</label>
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={onFileChange}
-                      className="w-full text-sm rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-800 file:text-neutral-100"
-                    />
-                    {fileName && (
-                      <p className="text-xs text-neutral-400 mt-1">
-                        Selected: {fileName}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm mb-1">Delimiter</label>
-                    <select
-                      value={delimiter}
-                      onChange={(e) => setDelimiter(e.target.value)}
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+            {headers.length > 0 && (
+              <Card className={PANEL}>
+                <CardHeader>
+                  <CardTitle>Schema</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span
+                      className={`px-2 py-1 rounded-full border ${
+                        requiredMissing.length === 0
+                          ? "bg-emerald-500/15 text-emerald-300 border-emerald-600"
+                          : "bg-red-500/15 text-red-300 border-red-600"
+                      }`}
+                      title="Required columns status"
                     >
-                      <option value=",">Comma (,)</option>
-                      <option value=";">Semicolon (;)</option>
-                      <option value="\t">Tab (\t)</option>
-                    </select>
-                    <label className="mt-3 flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={headerRow}
-                        onChange={(e) => setHeaderRow(e.target.checked)}
-                        className="h-4 w-4 accent-white"
-                      />
-                      First row contains headers
-                    </label>
+                      Required {REQUIRED_COLS.length - requiredMissing.length}/
+                      {REQUIRED_COLS.length}
+                    </span>
+
+                    <span
+                      className="px-2 py-1 rounded-full border bg-white/5 text-white/80 border-white/15"
+                      title="Optional columns status"
+                    >
+                      Optional {OPTIONAL_COLS.length - optionalMissing.length}/
+                      {OPTIONAL_COLS.length}
+                    </span>
                   </div>
-                </div>
 
-                {error && (
-                  <div className="rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-sm text-red-200">
-                    {error}
-                  </div>
-                )}
+                  {requiredMissing.length > 0 && (
+                    <p className="text-xs text-red-300">
+                      Missing required: {requiredMissing.join(", ")}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
-                {/* Schema (compact) */}
-                {headers.length > 0 && (
-                  <div className="rounded-xl border border-neutral-800/60 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium">Schema</div>
-
-                      <div className="flex items-center gap-2 text-xs">
-                        <span
-                          className={`px-2 py-1 rounded-full border ${
-                            requiredMissing.length === 0
-                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-600"
-                              : "bg-red-500/15 text-red-300 border-red-600"
-                          }`}
-                          title="Required columns status"
-                        >
-                          Required {REQUIRED_COLS.length - requiredMissing.length}/
-                          {REQUIRED_COLS.length}
-                        </span>
-
-                        <span
-                          className="px-2 py-1 rounded-full border bg-neutral-800 text-neutral-300 border-neutral-700"
-                          title="Optional columns status"
-                        >
-                          Optional {OPTIONAL_COLS.length - optionalMissing.length}/
-                          {OPTIONAL_COLS.length}
-                        </span>
-
-                        <details className="ml-2">
-                          <summary className="cursor-pointer select-none text-neutral-400 hover:text-neutral-200">
-                            Details
-                          </summary>
-
-                          <div className="mt-3">
-                            <div className="text-xs mb-1 text-neutral-400">Required</div>
-                            <div className="flex flex-wrap gap-2">
-                              {REQUIRED_COLS.map((c) => (
-                                <span
-                                  key={c}
-                                  className={`rounded-full border px-2 py-1 text-[11px] ${
-                                    headers.includes(c)
-                                      ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
-                                      : "bg-red-500/20 text-red-200 border-red-700"
-                                  }`}
-                                >
-                                  {c}
-                                </span>
-                              ))}
-                            </div>
-
-                            <div className="text-xs mt-3 mb-1 text-neutral-400">Optional</div>
-                            <div className="flex flex-wrap gap-2">
-                              {OPTIONAL_COLS.map((c) => (
-                                <span
-                                  key={c}
-                                  className={`rounded-full border px-2 py-1 text-[11px] ${
-                                    headers.includes(c)
-                                      ? "bg-neutral-800 text-neutral-200 border-neutral-700"
-                                      : "bg-neutral-900 text-neutral-500 border-neutral-800"
-                                  }`}
-                                >
-                                  {c}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </details>
-                      </div>
-                    </div>
-
-                    {requiredMissing.length > 0 && (
-                      <p className="mt-2 text-xs text-red-300">
-                        Missing required: {requiredMissing.join(", ")}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Results */}
             {results.length > 0 && (
-              <Card className="border-neutral-800 bg-neutral-900/60 backdrop-blur rounded-2xl">
+              <Card className={PANEL}>
                 <CardHeader>
                   <CardTitle>Results</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* HQLA vs Outflows */}
-                  <div className="rounded-2xl border border-neutral-800 p-4">
-                    <div className="mb-2 text-sm text-neutral-300">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                    <div className="mb-2 text-sm text-white/80">
                       HQLA vs Outflows by shock
                     </div>
                     <ResponsiveContainer width="100%" height={280}>
                       <BarChart data={sortedResults} barCategoryGap={24}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                        <CartesianGrid stroke="rgba(255,255,255,0.06)" />
                         <XAxis
                           dataKey="shock_bps"
-                          tick={{ fontSize: 12, fill: "#9CA3AF" }}
-                          stroke="#374151"
+                          tick={{ fontSize: 12, fill: "#D1D5DB" }}
+                          stroke="#4B5563"
                         />
                         <YAxis
                           tickFormatter={fmtMoney}
-                          tick={{ fontSize: 12, fill: "#9CA3AF" }}
-                          stroke="#374151"
+                          tick={{ fontSize: 12, fill: "#D1D5DB" }}
+                          stroke="#4B5563"
                         />
                         <Tooltip
                           cursor={false}
                           contentStyle={{
-                            background: "#0A0A0A",
-                            border: "1px solid #262626",
+                            background: "rgba(10,10,10,0.75)",
+                            backdropFilter: "blur(6px)",
+                            border: "1px solid rgba(255,255,255,0.08)",
                             borderRadius: 12,
                             color: "#E5E7EB",
                           }}
@@ -526,7 +614,7 @@ export default function App() {
                           }
                           labelFormatter={(l) => `Shock: ${l} bps`}
                         />
-                        <Legend wrapperStyle={{ color: "#D1D5DB" }} />
+                        <Legend wrapperStyle={{ color: "#E5E7EB" }} />
                         <Bar
                           dataKey="lcr_hqla"
                           name="HQLA"
@@ -549,20 +637,24 @@ export default function App() {
 
                   {/* KPIs */}
                   <div className="grid gap-4 sm:grid-cols-3">
-                    <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="text-sm text-neutral-400">Equity</div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                      <div className="text-sm text-white/70">Equity</div>
                       <div className="text-2xl font-semibold">{fmtMoney(equity)}</div>
                     </div>
-                    <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="text-sm text-neutral-400">Best ΔEVE (% equity)</div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                      <div className="text-sm text-white/70">Best ΔEVE (% equity)</div>
                       <div className="text-2xl font-semibold">
-                        {fmtPct(Math.max(...results.map((r) => r.eve_pct_equity * 100)))}
+                        {fmtPct(
+                          Math.max(...results.map((r) => r.eve_pct_equity * 100))
+                        )}
                       </div>
                     </div>
-                    <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="text-sm text-neutral-400">Worst ΔEVE (% equity)</div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                      <div className="text-sm text-white/70">Worst ΔEVE (% equity)</div>
                       <div className="text-2xl font-semibold">
-                        {fmtPct(Math.min(...results.map((r) => r.eve_pct_equity * 100)))}
+                        {fmtPct(
+                          Math.min(...results.map((r) => r.eve_pct_equity * 100))
+                        )}
                       </div>
                     </div>
                   </div>
@@ -570,8 +662,8 @@ export default function App() {
                   {/* Charts */}
                   <div className="grid gap-6 lg:grid-cols-2">
                     {/* ΔEVE / Equity */}
-                    <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="mb-2 text-sm text-neutral-300">
+                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                      <div className="mb-2 text-sm text-white/80">
                         ΔEVE / Equity vs shock
                       </div>
                       <ResponsiveContainer width="100%" height={260}>
@@ -589,10 +681,11 @@ export default function App() {
                                 : val
                             }
                             labelFormatter={(l) => `Shock: ${l} bps`}
-                            cursor={{ stroke: "#374151", strokeWidth: 1 }}
+                            cursor={{ stroke: "#4B5563", strokeWidth: 1 }}
                             contentStyle={{
-                              background: "#0A0A0A",
-                              border: "1px solid #262626",
+                              background: "rgba(10,10,10,0.8)",
+                              backdropFilter: "blur(10px)",
+                              border: "1px solid rgba(255,255,255,0.12)",
                               borderRadius: 12,
                               color: "#E5E7EB",
                             }}
@@ -610,8 +703,8 @@ export default function App() {
                     </div>
 
                     {/* ΔNII */}
-                    <div className="rounded-xl border border-neutral-800 p-4">
-                      <div className="mb-2 text-sm text-neutral-300">
+                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                      <div className="mb-2 text-sm text-white/80">
                         ΔNII (12m) vs shock
                       </div>
                       <ResponsiveContainer width="100%" height={260}>
@@ -621,12 +714,15 @@ export default function App() {
                           <YAxis tickFormatter={fmtMoney} tick={{ fontSize: 12 }} />
                           <Tooltip
                             formatter={(val: any, name: any) =>
-                              name === "ΔNII (12m)" ? fmtMoney(val as number) : val
+                              name === "ΔNII (12m)"
+                                ? fmtMoney(val as number)
+                                : val
                             }
                             labelFormatter={(l) => `Shock: ${l} bps`}
                             contentStyle={{
-                              background: "#0A0A0A",
-                              border: "1px solid #262626",
+                              background: "rgba(10,10,10,0.8)",
+                              backdropFilter: "blur(10px)",
+                              border: "1px solid rgba(255,255,255,0.12)",
                               borderRadius: 12,
                               color: "#E5E7EB",
                             }}
@@ -644,44 +740,72 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Results table */}
-                  <div className="overflow-auto rounded-xl border border-neutral-800">
+                  {/* Table */}
+                  <div className="overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
                     <table className="min-w-full text-sm">
-                      <thead className="sticky top-0 bg-neutral-900/90">
+                      <thead className="sticky top-0 bg-white/5 backdrop-blur">
                         <tr>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">shock_bps</th>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">ΔEVE</th>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">ΔEVE / Equity</th>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">ΔNII (12m)</th>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">HQLA</th>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">Outflows</th>
-                          <th className="text-left px-3 py-2 border-b border-neutral-800">Coverage</th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            shock_bps
+                          </th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            ΔEVE
+                          </th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            ΔEVE / Equity
+                          </th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            ΔNII (12m)
+                          </th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            HQLA
+                          </th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            Outflows
+                          </th>
+                          <th className="text-left px-3 py-2 border-b border-white/10">
+                            Coverage
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {results.map((r) => (
-                          <tr key={r.shock_bps} className="even:bg-neutral-900/40">
-                            <td className="px-3 py-2 border-b border-neutral-900/50">{r.shock_bps}</td>
-                            <td className="px-3 py-2 border-b border-neutral-900/50">{fmtMoney(r.eve_change)}</td>
+                          <tr key={r.shock_bps} className="even:bg-white/[0.03]">
+                            <td className="px-3 py-2 border-b border-white/10">
+                              {r.shock_bps}
+                            </td>
+                            <td className="px-3 py-2 border-b border-white/10">
+                              {fmtMoney(r.eve_change)}
+                            </td>
                             <td
-                              className={`px-3 py-2 border-b border-neutral-900/50 ${
-                                r.eve_pct_equity >= 0 ? "text-emerald-300" : "text-red-300"
+                              className={`px-3 py-2 border-b border-white/10 ${
+                                r.eve_pct_equity >= 0
+                                  ? "text-emerald-300"
+                                  : "text-rose-300"
                               }`}
                             >
                               {fmtPct(r.eve_pct_equity * 100)}
                             </td>
                             <td
-                              className={`px-3 py-2 border-b border-neutral-900/50 ${
-                                r.nii_delta >= 0 ? "text-emerald-300" : "text-red-300"
+                              className={`px-3 py-2 border-b border-white/10 ${
+                                r.nii_delta >= 0
+                                  ? "text-emerald-300"
+                                  : "text-rose-300"
                               }`}
                             >
                               {fmtMoney(r.nii_delta)}
                             </td>
-                            <td className="px-3 py-2 border-b border-neutral-900/50">{fmtMoney(r.lcr_hqla)}</td>
-                            <td className="px-3 py-2 border-b border-neutral-900/50">{fmtMoney(r.lcr_outflows)}</td>
+                            <td className="px-3 py-2 border-b border-white/10">
+                              {fmtMoney(r.lcr_hqla)}
+                            </td>
+                            <td className="px-3 py-2 border-b border-white/10">
+                              {fmtMoney(r.lcr_outflows)}
+                            </td>
                             <td
-                              className={`px-3 py-2 border-b border-neutral-900/50 ${
-                                r.lcr_coverage >= 1 ? "text-emerald-300" : "text-red-300"
+                              className={`px-3 py-2 border-b border-white/10 ${
+                                r.lcr_coverage >= 1
+                                  ? "text-emerald-300"
+                                  : "text-rose-300"
                               }`}
                             >
                               {fmtX(r.lcr_coverage)}
@@ -698,58 +822,135 @@ export default function App() {
         </div>
       </div>
 
-      {/* ---------- Preview Modal ---------- */}
+      {/* Preview modal */}
       {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          {/* overlay */}
-          <div className="absolute inset-0 bg-black/60" onClick={() => setPreviewOpen(false)} />
-          {/* content */}
-          <div className="relative z-10 w-[min(1100px,92vw)] rounded-2xl border border-neutral-800 bg-neutral-900 p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-medium">CSV Preview</h3>
-              <button
-                onClick={() => setPreviewOpen(false)}
-                className="rounded-lg border border-neutral-800 px-2 py-1 text-sm hover:bg-neutral-800"
-                aria-label="Close preview"
-              >
-                Close
-              </button>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setPreviewOpen(false)}
+          />
+          <div
+            className={`relative z-10 w-[min(1100px,92vw)] max-h-[82vh] ${PANEL} p-0 overflow-hidden`}
+          >
+            {/* Header sticky */}
+            <div className="sticky top-0 z-10 border-b border-white/10 bg-black/30 backdrop-blur px-4 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-medium">CSV Preview</h3>
+                  {headers.length > 0 && (
+                    <span className="text-xs rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/80">
+                      {filteredPreviewRows.length.toLocaleString()} rows ·{" "}
+                      {headers.length} cols
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <input
+                      id="preview-search"
+                      value={previewQuery}
+                      onChange={(e) => setPreviewQuery(e.target.value)}
+                      placeholder="Search (Cmd/Ctrl+F)"
+                      className="h-9 w-56 rounded-lg border border-white/10 bg-white/5 px-8 text-sm placeholder-white/50 focus:outline-none focus:border-white/20"
+                    />
+                    <svg
+                      className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 opacity-70"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m21 21-4.3-4.3" />
+                    </svg>
+                  </div>
+
+                  <button
+                    onClick={() => setCompactRows((v) => !v)}
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm hover:bg-white/10"
+                    title="Toggle density"
+                  >
+                    {compactRows ? "Comfortable" : "Compact"}
+                  </button>
+
+                  <button
+                    onClick={copyPreviewCsv}
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm hover:bg-white/10"
+                  >
+                    Copy CSV
+                  </button>
+                  <button
+                    onClick={downloadPreviewCsv}
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm hover:bg-white/10"
+                  >
+                    Download
+                  </button>
+
+                  <button
+                    onClick={() => setPreviewOpen(false)}
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm hover:bg-white/10"
+                    aria-label="Close preview"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {headers.length === 0 ? (
-              <p className="text-sm text-neutral-400">Upload a CSV to see a preview.</p>
-            ) : (
-              <div className="overflow-auto rounded-xl border border-neutral-800 max-h-[70vh]">
-                <table className="min-w-full text-sm">
-                  <thead className="sticky top-0 bg-neutral-900/90 backdrop-blur">
-                    <tr>
-                      {headers.map((h) => (
-                        <th key={h} className="text-left px-3 py-2 font-semibold border-b border-neutral-800">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((r, idx) => (
-                      <tr key={idx} className="even:bg-neutral-900/40">
+            {/* Body */}
+            <div className="p-4">
+              {headers.length === 0 ? (
+                <p className="text-sm text-white/70">
+                  Upload a CSV to see a preview.
+                </p>
+              ) : (
+                <div className="max-h-[66vh] overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
+                  <table
+                    className={`min-w-full ${
+                      compactRows ? "text-[13px]" : "text-sm"
+                    }`}
+                  >
+                    <thead className="sticky top-0 bg-white/5 backdrop-blur">
+                      <tr>
                         {headers.map((h) => (
-                          <td key={h} className="px-3 py-2 border-b border-neutral-900/50">
-                            {String(normalizeCell(h, (r as any)[h]))}
-                          </td>
+                          <th
+                            key={h}
+                            className="text-left px-3 py-2 font-semibold border-b border-white/10"
+                          >
+                            {h}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody>
+                      {filteredPreviewRows.map((r, idx) => (
+                        <tr key={idx} className="even:bg-white/[0.03]">
+                          {headers.map((h) => (
+                            <td
+                              key={h}
+                              className="px-3 border-b border-white/10 py-2"
+                            >
+                              {String(normalizeCell(h, (r as any)[h]))}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-            {rows.length > previewCount && (
-              <p className="text-xs text-neutral-500 mt-2">
-                Showing first {previewCount} rows of {rows.length}.
-              </p>
-            )}
+              {rows.length > previewCount && (
+                <p className="text-xs text-white/60 mt-2">
+                  Showing first {previewCount} rows of {rows.length}.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
