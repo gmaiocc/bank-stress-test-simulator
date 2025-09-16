@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
+import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,7 @@ import {
 
 /* ==================== Utils & formatters ==================== */
 const fmtMoney = (n: number) =>
-  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Number(n) || 0);
 const fmtPct = (x: number, digits = 1) => `${x.toFixed(digits)}%`;
 const fmtX = (x: number, digits = 2) => `${x.toFixed(digits)}x`;
 
@@ -48,6 +49,7 @@ const SELECT_FIELD = `${FIELD_BASE} pr-9 appearance-none cursor-pointer`;
 const CHECKBOX =
   "h-4 w-4 rounded border border-white/20 bg-white/10 accent-white/90 focus:outline-none focus:ring-2 focus:ring-white/20";
 
+/* ==================== Tipagem ==================== */
 type Row = Record<string, string | number | null>;
 type ScenarioOut = {
   shock_bps: number;
@@ -69,92 +71,184 @@ const REQUIRED_COLS = [
   "fixed_float",
   "float_share",
   "repricing_bucket",
-];
-const OPTIONAL_COLS = ["deposit_beta", "stability", "convexity"];
+] as const;
+const OPTIONAL_COLS = ["deposit_beta", "stability", "convexity"] as const;
+type RequiredCol = typeof REQUIRED_COLS[number];
+type OptionalCol = typeof OPTIONAL_COLS[number];
 
-function BackgroundGlow() {
-  return (
-    <>
-      <div className="fixed inset-0 -z-50 bg-neutral-950" />
-      <div
-        className="pointer-events-none fixed inset-0 -z-40"
-        style={{
-          background: `
-            radial-gradient(1200px 800px at 50% 15%, rgba(59,130,246,0.12), transparent 70%),
-            radial-gradient(1000px 700px at 25% 75%, rgba(96,165,250,0.10), transparent 75%),
-            radial-gradient(900px 600px at 75% 70%, rgba(37,99,235,0.09), transparent 75%),
-            radial-gradient(800px 500px at 15% 40%, rgba(147,197,253,0.08), transparent 70%),
-            radial-gradient(700px 500px at 85% 30%, rgba(29,78,216,0.07), transparent 70%)
-          `,
-        }}
-      />
-    </>
-  );
+/* ==================== Mapeamento & Validação (zod) ==================== */
+const normalize = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[\s\-\/]+/g, "_")
+    .replace(/[()]/g, "")
+    .replace(/__+/g, "_")
+    .trim();
+
+const SYNONYMS: Record<RequiredCol | OptionalCol, string[]> = {
+  type: ["type", "instrument_type", "product_type", "kind"],
+  name: ["name", "description", "title"],
+  amount: ["amount", "principal", "balance", "notional", "par"],
+  rate: ["rate", "coupon", "interest_rate", "yld", "yield"],
+  duration: ["duration", "tenor", "term", "months", "maturity_months"],
+  category: ["category", "side", "asset_liability", "asset_or_liability"],
+  fixed_float: ["fixed_float", "rate_type", "fixed_or_float", "fix_float"],
+  float_share: ["float_share", "floating_share", "share_float", "pct_float"],
+  repricing_bucket: ["repricing_bucket", "bucket", "repricing", "gap_bucket"],
+  deposit_beta: ["deposit_beta", "beta", "beta_deposit"],
+  stability: ["stability", "deposit_stability", "stickiness"],
+  convexity: ["convexity"],
+};
+
+const requiredSchema = z.object({
+  type: z.string().min(1),
+  name: z.string().min(1),
+  amount: z.number(),
+  rate: z.number(),
+  duration: z.number(),
+  category: z.string().min(1),
+  fixed_float: z.string().min(1),
+  float_share: z.number(),
+  repricing_bucket: z.string().min(1),
+});
+
+const optionalSchema = z.object({
+  deposit_beta: z.number().optional(),
+  stability: z.number().optional(),
+  convexity: z.number().optional(),
+});
+
+type ValidRow = z.infer<typeof requiredSchema> & z.infer<typeof optionalSchema>;
+
+function buildHeaderMap(headers: string[]) {
+  const map: Record<string, string> = {}; // from original -> expected
+  const normHeaders = headers.map((h) => [h, normalize(h)] as const);
+
+  const tryFind = (expected: string, alts: string[]) => {
+    const candidates = [expected, ...alts].map(normalize);
+    const found = normHeaders.find(([, n]) => candidates.includes(n));
+    return found?.[0]; // original label
+  };
+
+  [...REQUIRED_COLS, ...OPTIONAL_COLS].forEach((col) => {
+    const orig = tryFind(col, SYNONYMS[col]);
+    if (orig) map[orig] = col; // map original->expected
+  });
+  return map;
 }
 
-/* ---------- Modal content helper (focus + Esc + focus trap) ---------- */
-function SchemaModalContent({
-  panelClass,
-  onClose,
-  children,
-}: {
-  panelClass: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+function remapRow(row: Row, headerMap: Record<string, string>) {
+  const out: Row = {};
+  Object.entries(row).forEach(([k, v]) => {
+    const mapped = headerMap[k] ?? k;
+    out[mapped] = v;
+  });
+  return out;
+}
 
-  useEffect(() => {
-    const root = containerRef.current!;
-    // foco inicial no primeiro focável
-    const getFocusables = () =>
-      root.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-    const focusables = getFocusables();
-    (focusables[0] ?? root).focus();
+function validateRows(rows: Row[], headers: string[]) {
+  const headerMap = buildHeaderMap(headers);
+  const remapped = rows.map((r) => remapRow(r, headerMap)) as Row[];
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-      if (e.key === "Tab") {
-        const list = Array.from(getFocusables()).filter(
-          (el) => !el.hasAttribute("disabled")
-        );
-        if (!list.length) return;
-        const first = list[0];
-        const last = list[list.length - 1];
-        const active = document.activeElement as HTMLElement | null;
+  const mappedHeaders = Array.from(
+    new Set(remapped.flatMap((r) => Object.keys(r)))
+  );
+  const missing = REQUIRED_COLS.filter((c) => !mappedHeaders.includes(c));
 
-        if (e.shiftKey) {
-          if (active === first || !root.contains(active)) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (active === last || !root.contains(active)) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }
+  const errors: string[] = [];
+  const valid: ValidRow[] = [];
+
+  if (missing.length) {
+    errors.push(
+      `Missing required columns: ${missing.join(", ")}`
+    );
+  }
+
+  const coerceNum = (x: any) => {
+    if (x == null) return undefined;
+    if (typeof x === "number") return x;
+    if (typeof x === "string") {
+      const trimmed = x.trim();
+      if (trimmed === "") return undefined;
+      const num = Number(trimmed);
+      return Number.isNaN(num) ? undefined : num;
+    }
+    return undefined;
+  };
+
+  for (let i = 0; i < remapped.length; i++) {
+    const r = remapped[i];
+    const candidate: Partial<ValidRow> = {
+      type: String(r.type ?? ""),
+      name: String(r.name ?? ""),
+      amount: coerceNum(r.amount),
+      rate: coerceNum(r.rate),
+      duration: coerceNum(r.duration),
+      category: String(r.category ?? ""),
+      fixed_float: String(r.fixed_float ?? ""),
+      float_share: coerceNum(r.float_share),
+      repricing_bucket: String(r.repricing_bucket ?? ""),
+      deposit_beta: coerceNum(r.deposit_beta),
+      stability: coerceNum(r.stability),
+      convexity: coerceNum(r.convexity),
     };
 
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const parsed = requiredSchema.merge(optionalSchema).safeParse(candidate);
+    if (parsed.success) valid.push(parsed.data);
+    else {
+      errors.push(
+        `Row ${i + 1}: ${parsed.error.issues
+          .map((iss) => `${iss.path.join(".")}: ${iss.message}`)
+          .join("; ")}`
+      );
+    }
+  }
 
-  return (
-    <div
-      ref={containerRef}
-      className={`relative z-10 w-[min(720px,92vw)] ${panelClass} p-4 outline-none`}
-      tabIndex={-1}
-    >
-      {children}
-    </div>
-  );
+  return { validRows: valid, errors, headerMap, mappedHeaders };
+}
+
+/* ==================== Delimiter detection & decimal comma ==================== */
+function detectDelimiter(sample: string): string {
+  // Try common delimiters and pick the one with most consistent column counts
+  const DELIMS = [",", ";", "\t", "|"];
+  const lines = sample.split(/\r?\n/).filter((l) => l.trim()).slice(0, 10);
+  let best = ",";
+  let bestScore = -Infinity;
+
+  for (const d of DELIMS) {
+    const counts = lines.map((l) => l.split(d).length);
+    const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+    const varc =
+      counts.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / counts.length;
+    const score = mean - varc; // prefer higher mean (more cols) and lower variance (consistent)
+    if (score > bestScore) {
+      bestScore = score;
+      best = d;
+    }
+  }
+  return best;
+}
+
+// Heurística para PT-BR/PT-PT: "1.234.567,89" -> "1234567.89", "123,45" -> "123.45"
+function parsePTNumberLike(s: string) {
+  if (typeof s !== "string") return s;
+  const trimmed = s.trim();
+
+  // if it already looks like US/EN decimal -> return
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
+
+  // 1.234.567,89 or 123,45
+  if (/^-?\d{1,3}(\.\d{3})*,\d+$/.test(trimmed) || /^-?\d+,\d+$/.test(trimmed)) {
+    const noThousands = trimmed.replace(/\./g, "");
+    return noThousands.replace(",", ".");
+  }
+
+  // "1.234.567" (inteiro com pontos de milhar)
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(trimmed)) {
+    return trimmed.replace(/\./g, "");
+  }
+
+  return s;
 }
 
 /* ==================== Export helpers (SVG -> PNG) ==================== */
@@ -207,6 +301,11 @@ export default function App() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [error, setError] = useState("");
 
+  // Validation state
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [headerMapState, setHeaderMapState] = useState<Record<string, string>>({});
+  const [mappedHeaders, setMappedHeaders] = useState<string[]>([]);
+
   // Toast (leve)
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const showToast = (type: "ok" | "err", msg: string) => {
@@ -218,7 +317,7 @@ export default function App() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Parser options
-  const [delimiter, setDelimiter] = useState(",");
+  const [delimiter, setDelimiter] = useState<string>("auto"); // NEW: auto detect
   const [headerRow, setHeaderRow] = useState(true);
 
   // Parameters
@@ -255,7 +354,7 @@ export default function App() {
         setBetaCore(saved.betaCore ?? 0.3);
         setBetaNoncore(saved.betaNoncore ?? 0.6);
         setShocks(Array.isArray(saved.shocks) ? saved.shocks : [-200, -100, 0, 100, 200]);
-        setDelimiter(saved.delimiter ?? ",");
+        setDelimiter(saved.delimiter ?? "auto");
         setHeaderRow(saved.headerRow ?? true);
       }
     } catch {}
@@ -267,49 +366,91 @@ export default function App() {
   }, [afsHaircut, depositRunoff, betaCore, betaNoncore, shocks, delimiter, headerRow]);
 
   const requiredMissing = useMemo(
-    () => REQUIRED_COLS.filter((c) => headers.length && !headers.includes(c)),
-    [headers]
+    () => REQUIRED_COLS.filter((c) => headers.length && !headers.includes(c) && !mappedHeaders.includes(c)),
+    [headers, mappedHeaders]
   );
   const optionalMissing = useMemo(
-    () => OPTIONAL_COLS.filter((c) => headers.length && !headers.includes(c)),
-    [headers]
+    () => OPTIONAL_COLS.filter((c) => headers.length && !headers.includes(c) && !mappedHeaders.includes(c)),
+    [headers, mappedHeaders]
   );
 
   /* ---- CSV upload/parse ---- */
   function parseFile(f: File) {
     setError("");
-    Papa.parse<Row>(f, {
-      header: headerRow,
-      delimiter,
-      skipEmptyLines: true,
-      dynamicTyping: true,
-      complete: (res) => {
-        if (res.errors && res.errors.length) {
-          const msg = `Parse error on row ${res.errors[0].row}: ${res.errors[0].message}`;
-          setError(msg);
+    setValidationErrors([]);
+    setHeaderMapState({});
+    setMappedHeaders([]);
+
+    // Read a small chunk for delimiter detection if needed
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      const chosenDelimiter = delimiter === "auto" ? detectDelimiter(text.slice(0, 50_000)) : delimiter;
+
+      Papa.parse<Row>(f, {
+        header: headerRow,
+        delimiter: chosenDelimiter,
+        skipEmptyLines: true,
+        dynamicTyping: true, // still on, but we also transform decimal commas below
+        transform: (val: string) => {
+          const fixed = parsePTNumberLike(val);
+          // Let Papa do dynamicTyping AFTER we normalize decimals; return string or numeric-looking string
+          return fixed;
+        },
+        complete: (res) => {
+          if (res.errors && res.errors.length) {
+            const msg = `Parse error on row ${res.errors[0].row}: ${res.errors[0].message}`;
+            setError(msg);
+            showToast("err", "Erro ao ler o CSV.");
+            setRows([]);
+            setHeaders([]);
+            return;
+          }
+          const data = (res.data as Row[]).filter((r) => Object.keys(r).length);
+          const hdrs = res.meta.fields ?? Object.keys(data[0] || {});
+
+          // Convert number-like strings to numbers (post transform)
+          const toNum = (v: any) => {
+            if (typeof v === "number") return v;
+            if (typeof v === "string") {
+              const num = Number(v);
+              if (!Number.isNaN(num) && v.trim() !== "") return num;
+            }
+            return v;
+          };
+          const normalizedRows = data.map((r) => {
+            const o: Row = {};
+            for (const k of Object.keys(r)) o[k] = toNum((r as any)[k]);
+            return o;
+          });
+
+          // Validation + mapping
+const { validRows, errors, headerMap, mappedHeaders } = validateRows(normalizedRows, hdrs);
+setValidationErrors(errors);
+setHeaderMapState(headerMap);
+setMappedHeaders(mappedHeaders);
+
+setRows(normalizedRows); // <<<<< aqui uso os normalizados, não só os validados
+setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
+
+          // raw CSV para backend
+          const reader2 = new FileReader();
+          reader2.onload = () => setRawCsv(String(reader2.result || ""));
+          reader2.onerror = () => setRawCsv("");
+          reader2.readAsText(f);
+
+          showToast("ok", "CSV carregado com sucesso.");
+        },
+        error: (err) => {
+          setError(err.message || "Unknown error while parsing CSV.");
           showToast("err", "Erro ao ler o CSV.");
-          setRows([]);
-          setHeaders([]);
-          return;
-        }
-        const data = (res.data as Row[]).filter((r) => Object.keys(r).length);
-        setRows(data);
-        const hdrs = res.meta.fields ?? Object.keys(data[0] || {});
-        setHeaders(hdrs);
-
-        // raw CSV para backend
-        const reader = new FileReader();
-        reader.onload = () => setRawCsv(String(reader.result || ""));
-        reader.onerror = () => setRawCsv("");
-        reader.readAsText(f);
-
-        showToast("ok", "CSV carregado com sucesso.");
-      },
-      error: (err) => {
-        setError(err.message || "Unknown error while parsing CSV.");
-        showToast("err", "Erro ao ler o CSV.");
-      },
-    });
+        },
+      });
+    };
+    reader.onerror = () => {
+      showToast("err", "Não foi possível ler o ficheiro.");
+    };
+    reader.readAsText(f);
   }
 
   function validateAndParse(f?: File) {
@@ -360,8 +501,36 @@ export default function App() {
     };
   }, []);
 
-  const previewCount = 100;
-  const previewRows = useMemo(() => rows.slice(0, previewCount), [rows]);
+  /* ==================== Preview com paginação & pesquisa (debounce) ==================== */
+  const [previewQuery, setPreviewQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [compactRows, setCompactRows] = useState(false);
+  const [pageSize, setPageSize] = useState(200);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(previewQuery.trim().toLowerCase()), 300);
+    return () => window.clearTimeout(t);
+  }, [previewQuery]);
+
+  const previewRowsFiltered = useMemo(() => {
+    if (!debouncedQuery) return rows;
+    return rows.filter((r) =>
+      (headers.length ? headers : Object.keys(r)).some((h) =>
+        String((r as any)[h] ?? "").toLowerCase().includes(debouncedQuery)
+      )
+    );
+  }, [rows, headers, debouncedQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(previewRowsFiltered.length / pageSize));
+  useEffect(() => {
+    setPage(1); // reset page on new data or query
+  }, [debouncedQuery, rows, pageSize]);
+
+  const pageSlice = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return previewRowsFiltered.slice(start, start + pageSize);
+  }, [previewRowsFiltered, page, pageSize]);
 
   /* ---- Run API ---- */
   async function runStressTest() {
@@ -371,6 +540,11 @@ export default function App() {
       const msg = "Please upload a CSV first.";
       setApiError(msg);
       showToast("err", "Carrega um CSV primeiro.");
+      return;
+    }
+    if (validationErrors.length) {
+      setApiError("Há erros de validação nos dados. Corrige antes de correr o stress test.");
+      showToast("err", "Corrige os erros de validação.");
       return;
     }
     setLoading(true);
@@ -442,20 +616,6 @@ export default function App() {
     [results]
   );
 
-  // --- Preview: melhorias ---
-  const [previewQuery, setPreviewQuery] = useState("");
-  const [compactRows, setCompactRows] = useState(false);
-
-  const filteredPreviewRows = useMemo(() => {
-    if (!previewQuery.trim()) return previewRows;
-    const q = previewQuery.toLowerCase();
-    return previewRows.filter((r) =>
-      headers.some((h) =>
-        String((r as any)[h] ?? "").toLowerCase().includes(q)
-      )
-    );
-  }, [previewRows, headers, previewQuery]);
-
   function rowsToCsv(hdrs: string[], rowsArr: Row[]) {
     const esc = (v: any) => {
       const s = String(v ?? "");
@@ -469,7 +629,7 @@ export default function App() {
   }
 
   function copyPreviewCsv() {
-    const csv = rowsToCsv(headers, filteredPreviewRows as Row[]);
+    const csv = rowsToCsv(headers.length ? headers : Object.keys(rows[0] || {}), pageSlice as Row[]);
     navigator.clipboard.writeText(csv).then(
       () => showToast("ok", "Preview copiado para o clipboard."),
       () => showToast("err", "Não foi possível copiar.")
@@ -477,7 +637,7 @@ export default function App() {
   }
 
   function downloadPreviewCsv() {
-    const csv = rowsToCsv(headers, filteredPreviewRows as Row[]);
+    const csv = rowsToCsv(headers.length ? headers : Object.keys(rows[0] || {}), previewRowsFiltered as Row[]);
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -625,9 +785,11 @@ export default function App() {
                           onChange={(e) => setDelimiter(e.target.value)}
                           className={SELECT_FIELD}
                         >
+                          <option value="auto">Auto (detect)</option>
                           <option value=",">Comma (,)</option>
                           <option value=";">Semicolon (;)</option>
                           <option value="\t">Tab (\t)</option>
+                          <option value="|">Pipe (|)</option>
                         </select>
                         <svg
                           aria-hidden="true"
@@ -735,9 +897,9 @@ export default function App() {
                         variant="secondary"
                         className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                         onClick={() => setPreviewOpen(true)}
-                        disabled={headers.length === 0}
+                        disabled={headers.length === 0 && rows.length === 0}
                         title={
-                          headers.length === 0
+                          headers.length === 0 && rows.length === 0
                             ? "Upload a CSV first"
                             : "Preview parsed CSV"
                         }
@@ -787,14 +949,30 @@ export default function App() {
                   </div>
 
                   {/* Empty/error feedback */}
-                  {!headers.length && !error && (
+                  {!headers.length && !error && rows.length === 0 && (
                     <p className="text-xs text-white/60">
-                      Dica: podes descarregar um <button className="underline" onClick={downloadSampleCsv}>sample CSV</button> e editar.
+                      Dica: podes descarregar um{" "}
+                      <button className="underline" onClick={downloadSampleCsv}>
+                        sample CSV
+                      </button>{" "}
+                      e editar.
                     </p>
                   )}
-                  {apiError && (
+
+                  {(apiError || error) && (
                     <div className="rounded-lg border border-red-500/30 bg-red-500/15 p-3 text-xs text-red-200">
-                      {apiError}
+                      {apiError || error}
+                    </div>
+                  )}
+                  {validationErrors.length > 0 && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-1 max-h-40 overflow-auto">
+                      <div className="font-medium">Validation issues:</div>
+                      {validationErrors.slice(0, 8).map((e, i) => (
+                        <div key={i}>• {e}</div>
+                      ))}
+                      {validationErrors.length > 8 && (
+                        <div>…(+{validationErrors.length - 8} more)</div>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -805,7 +983,7 @@ export default function App() {
           {/* Main */}
           <main className="lg:col-span-8 space-y-6">
             {/* Schema card */}
-            {headers.length > 0 && (
+            {(headers.length > 0 || mappedHeaders.length > 0) && (
               <Card className={PANEL}>
                 <CardHeader>
                   <CardTitle>Schema</CardTitle>
@@ -822,14 +1000,14 @@ export default function App() {
                     >
                       Required {REQUIRED_COLS.length - requiredMissing.length}/
                       {REQUIRED_COLS.length}
-                      <span className="pointer-events-none absolute left-0 top-[120%] z-50 hidden min-w-[240px] rounded-lg border border-white/10 bg-black/80 p-3 text-xs text-white/80 shadow-2xl backdrop-blur group-hover:block">
+                      <span className="pointer-events-none absolute left-0 top-[120%] z-50 hidden min-w-[260px] rounded-lg border border-white/10 bg-black/80 p-3 text-xs text-white/80 shadow-2xl backdrop-blur group-hover:block">
                         <div className="font-medium mb-1">Required columns</div>
                         <div className="flex flex-wrap gap-1">
                           {REQUIRED_COLS.map((c) => (
                             <span
                               key={c}
                               className={`rounded-full border px-2 py-0.5 ${
-                                headers.includes(c)
+                                (headers.includes(c) || mappedHeaders.includes(c))
                                   ? "border-emerald-600/50 bg-emerald-500/10 text-emerald-200"
                                   : "border-rose-600/50 bg-rose-500/10 text-rose-200"
                               }`}
@@ -847,14 +1025,14 @@ export default function App() {
                     >
                       Optional {OPTIONAL_COLS.length - optionalMissing.length}/
                       {OPTIONAL_COLS.length}
-                      <span className="pointer-events-none absolute left-0 top-[120%] z-50 hidden min-w-[240px] rounded-lg border border-white/10 bg-black/80 p-3 text-xs text-white/80 shadow-2xl backdrop-blur group-hover:block">
+                      <span className="pointer-events-none absolute left-0 top-[120%] z-50 hidden min-w-[260px] rounded-lg border border-white/10 bg-black/80 p-3 text-xs text-white/80 shadow-2xl backdrop-blur group-hover:block">
                         <div className="font-medium mb-1">Optional columns</div>
                         <div className="flex flex-wrap gap-1">
                           {OPTIONAL_COLS.map((c) => (
                             <span
                               key={c}
                               className={`rounded-full border px-2 py-0.5 ${
-                                headers.includes(c)
+                                (headers.includes(c) || mappedHeaders.includes(c))
                                   ? "border-white/20 bg-white/10 text-white/90"
                                   : "border-white/10 bg-black/30 text-white/60"
                               }`}
@@ -871,6 +1049,20 @@ export default function App() {
                     <p className="text-xs text-red-300">
                       Missing required: {requiredMissing.join(", ")}
                     </p>
+                  )}
+
+                  {Object.keys(headerMapState).length > 0 && (
+                    <div className="text-xs text-white/70">
+                      <div className="font-medium mb-1">Automatic column mapping</div>
+                      <ul className="list-disc ml-5 space-y-0.5">
+                        {Object.entries(headerMapState).map(([orig, exp]) => (
+                          <li key={orig}>
+                            <span className="text-white/90">{orig}</span> →{" "}
+                            <span className="text-emerald-300">{exp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -921,7 +1113,7 @@ export default function App() {
                           <CartesianGrid strokeOpacity={0.1} />
                           <XAxis dataKey="shock_bps" tick={{ fontSize: 12 }} tickMargin={8} />
                           <YAxis
-                            tickFormatter={(v) => fmtPct(v * 100)}
+                            tickFormatter={(v) => fmtPct((Number(v) || 0) * 100)}
                             tick={{ fontSize: 12 }}
                             tickMargin={8}
                           />
@@ -1136,7 +1328,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Schema “View schema” modal - com foco inicial, Esc e focus trap; devolve foco ao botão */}
+      {/* Schema “View schema” modal */}
       {schemaOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center"
@@ -1176,7 +1368,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   {REQUIRED_COLS.map((c) => (
                     <span key={c} className={`rounded-full border px-2 py-1 text-[11px] ${
-                      headers.includes(c) ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
+                      (headers.includes(c) || mappedHeaders.includes(c)) ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
                       : "bg-red-500/20 text-red-200 border-red-700"}`}>
                       {c}
                     </span>
@@ -1188,7 +1380,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   {OPTIONAL_COLS.map((c) => (
                     <span key={c} className={`rounded-full border px-2 py-1 text-[11px] ${
-                      headers.includes(c) ? "bg-white/10 text-white/90 border-white/20"
+                      (headers.includes(c) || mappedHeaders.includes(c)) ? "bg-white/10 text-white/90 border-white/20"
                       : "bg-black/20 text-white/50 border-white/10"}`}>
                       {c}
                     </span>
@@ -1203,7 +1395,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Preview CSV modal (funcional) */}
+      {/* Preview CSV modal (com paginação virtual + debounce) */}
       {previewOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center"
@@ -1227,7 +1419,7 @@ export default function App() {
           >
             <div className="flex items-center justify-between mb-3 gap-2">
               <h3 id="preview-title" className="text-lg font-medium">
-                CSV Preview ({filteredPreviewRows.length}/{rows.length})
+                CSV Preview ({previewRowsFiltered.length}/{rows.length})
               </h3>
               <div className="flex items-center gap-2">
                 <input
@@ -1247,19 +1439,31 @@ export default function App() {
                   />
                   Compact
                 </label>
+                <label className="flex items-center gap-2 text-sm">
+                  Page size
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-2 text-sm focus:outline-none"
+                  >
+                    {[100, 200, 500, 1000].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
                 <Button
                   variant="secondary"
                   onClick={copyPreviewCsv}
                   className="bg-white/10 hover:bg-white/15 border border-white/10"
                 >
-                  Copy
+                  Copy (page)
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={downloadPreviewCsv}
                   className="bg-white/10 hover:bg-white/15 border border-white/10"
                 >
-                  Download
+                  Download (filtered)
                 </Button>
                 <Button
                   onClick={() => {
@@ -1273,11 +1477,36 @@ export default function App() {
               </div>
             </div>
 
+            {/* Pagination controls */}
+            <div className="flex items-center justify-between mb-2 text-xs text-white/70">
+              <div>
+                Page {page} / {totalPages} — showing {pageSlice.length} of {previewRowsFiltered.length} filtered rows
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  Prev
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+
             <div className="max-h-[60vh] overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
               <table className="min-w-full text-sm">
                 <thead className="sticky top-0 bg-white/5 backdrop-blur">
                   <tr>
-                    {headers.map((h) => (
+                    {(headers.length ? headers : Object.keys(pageSlice[0] || {})).map((h) => (
                       <th key={h} className="text-left px-3 py-2 border-b border-white/10">
                         {h}
                       </th>
@@ -1285,9 +1514,9 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPreviewRows.map((r, i) => (
+                  {pageSlice.map((r, i) => (
                     <tr key={i} className={`even:bg-white/[0.03] ${compactRows ? "" : ""}`}>
-                      {headers.map((h) => (
+                      {(headers.length ? headers : Object.keys(r)).map((h) => (
                         <td key={h} className={`px-3 ${compactRows ? "py-1.5" : "py-2"} border-b border-white/10`}>
                           {String((r as any)[h] ?? "")}
                         </td>
@@ -1297,9 +1526,131 @@ export default function App() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination controls bottom */}
+            <div className="flex items-center justify-end mt-2 gap-2">
+              <Button
+                variant="secondary"
+                className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                onClick={() => setPage(1)}
+                disabled={page === 1}
+              >
+                First
+              </Button>
+              <Button
+                variant="secondary"
+                className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Prev
+              </Button>
+              <div className="text-xs text-white/70">Page {page} / {totalPages}</div>
+              <Button
+                variant="secondary"
+                className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                Next
+              </Button>
+              <Button
+                variant="secondary"
+                className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                onClick={() => setPage(totalPages)}
+                disabled={page === totalPages}
+              >
+                Last
+              </Button>
+            </div>
           </SchemaModalContent>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ==================== Background ==================== */
+function BackgroundGlow() {
+  return (
+    <>
+      <div className="fixed inset-0 -z-50 bg-neutral-950" />
+      <div
+        className="pointer-events-none fixed inset-0 -z-40"
+        style={{
+          background: `
+            radial-gradient(1200px 800px at 50% 15%, rgba(59,130,246,0.12), transparent 70%),
+            radial-gradient(1000px 700px at 25% 75%, rgba(96,165,250,0.10), transparent 75%),
+            radial-gradient(900px 600px at 75% 70%, rgba(37,99,235,0.09), transparent 75%),
+            radial-gradient(800px 500px at 15% 40%, rgba(147,197,253,0.08), transparent 70%),
+            radial-gradient(700px 500px at 85% 30%, rgba(29,78,216,0.07), transparent 70%)
+          `,
+        }}
+      />
+    </>
+  );
+}
+
+/* ---------- Modal content helper (focus + Esc + focus trap) ---------- */
+function SchemaModalContent({
+  panelClass,
+  onClose,
+  children,
+}: {
+  panelClass: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const root = containerRef.current!;
+    const getFocusables = () =>
+      root.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+    const focusables = getFocusables();
+    (focusables[0] ?? root).focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+      if (e.key === "Tab") {
+        const list = Array.from(getFocusables()).filter(
+          (el) => !el.hasAttribute("disabled")
+        );
+        if (!list.length) return;
+        const first = list[0];
+        const last = list[list.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+
+        if (e.shiftKey) {
+          if (active === first || !root.contains(active)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (active === last || !root.contains(active)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative z-10 w-[min(720px,92vw)] ${panelClass} p-4 outline-none`}
+      tabIndex={-1}
+    >
+      {children}
     </div>
   );
 }
