@@ -26,6 +26,7 @@ const fmtPct = (x: number, digits = 1) => `${x.toFixed(digits)}%`;
 const fmtX = (x: number, digits = 2) => `${x.toFixed(digits)}x`;
 
 const LS_KEY = "bsts_v033_params";
+const MAX_FILE_MB = 10; // v0.4: robustez do parser – limite de tamanho
 
 /* ---- Glassmorphism presets (mais leve) ---- */
 const PANEL =
@@ -158,11 +159,7 @@ function validateRows(rows: Row[], headers: string[]) {
   const errors: string[] = [];
   const valid: ValidRow[] = [];
 
-  if (missing.length) {
-    errors.push(
-      `Missing required columns: ${missing.join(", ")}`
-    );
-  }
+  if (missing.length) errors.push(`Missing required columns: ${missing.join(", ")}`);
 
   const coerceNum = (x: any) => {
     if (x == null) return undefined;
@@ -196,6 +193,7 @@ function validateRows(rows: Row[], headers: string[]) {
     const parsed = requiredSchema.merge(optionalSchema).safeParse(candidate);
     if (parsed.success) valid.push(parsed.data);
     else {
+      // Ex.: "Row 3: amount: Expected number, received undefined"
       errors.push(
         `Row ${i + 1}: ${parsed.error.issues
           .map((iss) => `${iss.path.join(".")}: ${iss.message}`)
@@ -209,24 +207,27 @@ function validateRows(rows: Row[], headers: string[]) {
 
 /* ==================== Delimiter detection & decimal comma ==================== */
 function detectDelimiter(sample: string): string {
-  // Try common delimiters and pick the one with most consistent column counts
+  // v0.4: algoritmo com desempate e fallback
   const DELIMS = [",", ";", "\t", "|"];
   const lines = sample.split(/\r?\n/).filter((l) => l.trim()).slice(0, 10);
+  if (!lines.length) return ",";
+
   let best = ",";
   let bestScore = -Infinity;
 
   for (const d of DELIMS) {
     const counts = lines.map((l) => l.split(d).length);
     const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
-    const varc =
+    const variance =
       counts.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / counts.length;
-    const score = mean - varc; // prefer higher mean (more cols) and lower variance (consistent)
-    if (score > bestScore) {
+    // score: mais colunas, menos variância
+    const score = mean - variance;
+    if (score > bestScore || (score === bestScore && d === ",")) {
       bestScore = score;
       best = d;
     }
   }
-  return best;
+  return best || ",";
 }
 
 // Heurística para PT-BR/PT-PT: "1.234.567,89" -> "1234567.89", "123,45" -> "123.45"
@@ -294,6 +295,33 @@ async function exportChartPng(containerId: string, filename: string) {
   a.click();
 }
 
+/* ==================== Helpers v0.4: agrupamento e download de erros ==================== */
+function groupErrors(errs: string[]) {
+  // Agrupa por campo principal (se houver) e mantém amostras
+  const groups = new Map<string, string[]>();
+  for (const e of errs) {
+    const m = e.match(/Row \d+:\s*([^:]+):/); // captura "amount", "rate", etc.
+    const key = m ? m[1] : "general";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
+  }
+  return Array.from(groups.entries()).map(([field, items]) => ({
+    field,
+    count: items.length,
+    samples: items.slice(0, 10),
+  }));
+}
+
+function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ==================== App ==================== */
 export default function App() {
   // CSV preview state
@@ -317,7 +345,7 @@ export default function App() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Parser options
-  const [delimiter, setDelimiter] = useState<string>("auto"); // NEW: auto detect
+  const [delimiter, setDelimiter] = useState<string>("auto"); // auto detect
   const [headerRow, setHeaderRow] = useState(true);
 
   // Parameters
@@ -381,22 +409,26 @@ export default function App() {
     setHeaderMapState({});
     setMappedHeaders([]);
 
-    // Read a small chunk for delimiter detection if needed
+    // Leitura para autodetecção e pré-validação de cabeçalho
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result || "");
       const chosenDelimiter = delimiter === "auto" ? detectDelimiter(text.slice(0, 50_000)) : delimiter;
 
+      // v0.4: pré-validação leve do cabeçalho quando `headerRow` está ativo
+      if (headerRow) {
+        const firstLine = text.split(/\r?\n/).find((l) => l.trim()) ?? "";
+        const roughHdrs = firstLine.split(chosenDelimiter).map((h) => h.replace(/^"|"$/g, "").trim());
+        const tmpMap = buildHeaderMap(roughHdrs);
+        setHeaderMapState(tmpMap);
+      }
+
       Papa.parse<Row>(f, {
         header: headerRow,
         delimiter: chosenDelimiter,
         skipEmptyLines: true,
-        dynamicTyping: true, // still on, but we also transform decimal commas below
-        transform: (val: string) => {
-          const fixed = parsePTNumberLike(val);
-          // Let Papa do dynamicTyping AFTER we normalize decimals; return string or numeric-looking string
-          return fixed;
-        },
+        dynamicTyping: true,
+        transform: (val: string) => parsePTNumberLike(val),
         complete: (res) => {
           if (res.errors && res.errors.length) {
             const msg = `Parse error on row ${res.errors[0].row}: ${res.errors[0].message}`;
@@ -425,13 +457,13 @@ export default function App() {
           });
 
           // Validation + mapping
-const { validRows, errors, headerMap, mappedHeaders } = validateRows(normalizedRows, hdrs);
-setValidationErrors(errors);
-setHeaderMapState(headerMap);
-setMappedHeaders(mappedHeaders);
+          const { errors, headerMap, mappedHeaders } = validateRows(normalizedRows, hdrs);
+          setValidationErrors(errors);
+          setHeaderMapState(headerMap);
+          setMappedHeaders(mappedHeaders);
 
-setRows(normalizedRows); // <<<<< aqui uso os normalizados, não só os validados
-setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
+          setRows(normalizedRows); // preview usa todos os normalizados
+          setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
 
           // raw CSV para backend
           const reader2 = new FileReader();
@@ -455,6 +487,11 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
 
   function validateAndParse(f?: File) {
     if (!f) return;
+    const sizeMb = f.size / (1024 * 1024);
+    if (sizeMb > MAX_FILE_MB) {
+      showToast("err", `Ficheiro muito grande (${sizeMb.toFixed(1)}MB). Máx ${MAX_FILE_MB}MB.`);
+      return;
+    }
     if (!/\.csv$/i.test(f.name)) {
       showToast("err", "Ficheiro inválido (esperado .csv)");
       return;
@@ -468,24 +505,16 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
 
   // Drag & drop handlers
   function onDragEnter(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(true);
+    e.preventDefault(); e.stopPropagation(); setDragActive(true);
   }
   function onDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(true);
+    e.preventDefault(); e.stopPropagation(); setDragActive(true);
   }
   function onDragLeave(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+    e.preventDefault(); e.stopPropagation(); setDragActive(false);
   }
   function onDrop(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+    e.preventDefault(); e.stopPropagation(); setDragActive(false);
     const f = e.dataTransfer.files?.[0];
     validateAndParse(f);
   }
@@ -523,9 +552,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
   }, [rows, headers, debouncedQuery]);
 
   const totalPages = Math.max(1, Math.ceil(previewRowsFiltered.length / pageSize));
-  useEffect(() => {
-    setPage(1); // reset page on new data or query
-  }, [debouncedQuery, rows, pageSize]);
+  useEffect(() => { setPage(1); }, [debouncedQuery, rows, pageSize]);
 
   const pageSlice = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -537,8 +564,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
     setApiError("");
     setResults([]);
     if (!rawCsv) {
-      const msg = "Please upload a CSV first.";
-      setApiError(msg);
+      setApiError("Please upload a CSV first.");
       showToast("err", "Carrega um CSV primeiro.");
       return;
     }
@@ -647,6 +673,20 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
     URL.revokeObjectURL(url);
   }
 
+  function downloadErrorsTxt() {
+    if (!validationErrors.length) return;
+    const grouped = groupErrors(validationErrors);
+    const lines: string[] = [];
+    lines.push(`# Validation report`);
+    lines.push("");
+    for (const g of grouped) {
+      lines.push(`## ${g.field} — ${g.count} issue(s)`);
+      g.samples.forEach((s) => lines.push(`- ${s}`));
+      lines.push("");
+    }
+    downloadText("validation_errors.txt", lines.join("\n"));
+  }
+
   // atalhos para o Preview modal: Esc fecha | Cmd/Ctrl+F foca a pesquisa
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -684,11 +724,13 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
   }
 
   /* ===================== UI ===================== */
+  const groupedIssues = groupErrors(validationErrors);
+
   return (
     <div className="min-h-screen">
       <BackgroundGlow />
 
-      {/* Toast leve */}
+      {/* Toast (a11y) */}
       {toast && (
         <div
           role="status"
@@ -708,22 +750,22 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
           <h1 className="text-3xl font-semibold tracking-tight">
             Bank Stress Test Simulator
           </h1>
-          <Badge variant="secondary" className="text-xs">
-            v0.3.3
+          <Badge variant="secondary" className="text-xs" aria-label="App version">
+            v0.4.0
           </Badge>
         </header>
 
         {/* Layout */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Sidebar (inclui Upload c/ Drag & Drop) */}
+          {/* Sidebar */}
           <aside className="lg:col-span-4">
             <div className="lg:sticky lg:top-6 space-y-6">
-              <Card className={PANEL}>
+              <Card className={PANEL} aria-labelledby="data-params-title">
                 <CardHeader>
-                  <CardTitle className="text-base">Data & Parameters</CardTitle>
+                  <CardTitle id="data-params-title" className="text-base">Data & Parameters</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* === Upload: drag & drop + botões === */}
+                  {/* Upload */}
                   <div
                     onDragEnter={onDragEnter}
                     onDragOver={onDragOver}
@@ -742,7 +784,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                       <div className="text-sm">
                         <div className="font-medium">CSV file</div>
                         <div className="text-xs text-white/60">
-                          Arrasta aqui ou escolhe um ficheiro
+                          Arrasta aqui ou escolhe um ficheiro (máx {MAX_FILE_MB}MB)
                         </div>
                       </div>
                       <div className="flex flex-col gap-2 w-full">
@@ -784,6 +826,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                           value={delimiter}
                           onChange={(e) => setDelimiter(e.target.value)}
                           className={SELECT_FIELD}
+                          aria-label="CSV delimiter"
                         >
                           <option value="auto">Auto (detect)</option>
                           <option value=",">Comma (,)</option>
@@ -814,6 +857,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                         checked={headerRow}
                         onChange={(e) => setHeaderRow(e.target.checked)}
                         className={CHECKBOX}
+                        aria-label="First row contains headers"
                       />
                       First row contains headers
                     </label>
@@ -830,6 +874,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                       value={afsHaircut}
                       onChange={(e) => setAfsHaircut(Number(e.target.value))}
                       className={FIELD_NUMBER}
+                      aria-label="AFS haircut"
                     />
                   </label>
 
@@ -843,6 +888,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                       value={depositRunoff}
                       onChange={(e) => setDepositRunoff(Number(e.target.value))}
                       className={FIELD_NUMBER}
+                      aria-label="Deposit runoff"
                     />
                   </label>
 
@@ -857,6 +903,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                         value={betaCore}
                         onChange={(e) => setBetaCore(Number(e.target.value))}
                         className={FIELD_NUMBER}
+                        aria-label="Beta core"
                       />
                     </label>
                     <label className="text-sm block">
@@ -869,6 +916,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                         value={betaNoncore}
                         onChange={(e) => setBetaNoncore(Number(e.target.value))}
                         className={FIELD_NUMBER}
+                        aria-label="Beta noncore"
                       />
                     </label>
                   </div>
@@ -887,6 +935,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                       }}
                       className={FIELD}
                       placeholder="-200,-100,0,100,200"
+                      aria-label="Shock list"
                     />
                   </label>
 
@@ -903,6 +952,8 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                             ? "Upload a CSV first"
                             : "Preview parsed CSV"
                         }
+                        aria-haspopup="dialog"
+                        aria-controls="preview-dialog"
                       >
                         Preview CSV
                       </Button>
@@ -911,16 +962,13 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                         variant="secondary"
                         className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                         onClick={() => setSchemaOpen(true)}
+                        aria-haspopup="dialog"
                       >
                         View schema
                       </Button>
                     </div>
 
-                    <Button
-                      onClick={runStressTest}
-                      disabled={loading}
-                      className="w-full"
-                    >
+                    <Button onClick={runStressTest} disabled={loading} className="w-full">
                       {loading ? (
                         <span className="inline-flex items-center gap-2" aria-busy="true">
                           <span className="h-3 w-3 animate-pulse rounded-full bg-white/80" />
@@ -938,17 +986,13 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                       className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                       onClick={exportResultsCsv}
                       disabled={results.length === 0}
-                      title={
-                        results.length === 0
-                          ? "Run a stress test first"
-                          : "Export results as CSV"
-                      }
+                      title={results.length === 0 ? "Run a stress test first" : "Export results as CSV"}
                     >
                       Export CSV
                     </Button>
                   </div>
 
-                  {/* Empty/error feedback */}
+                  {/* Empty/error feedback (sidebar) */}
                   {!headers.length && !error && rows.length === 0 && (
                     <p className="text-xs text-white/60">
                       Dica: podes descarregar um{" "}
@@ -960,19 +1004,33 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                   )}
 
                   {(apiError || error) && (
-                    <div className="rounded-lg border border-red-500/30 bg-red-500/15 p-3 text-xs text-red-200">
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/15 p-3 text-xs text-red-200" role="alert">
                       {apiError || error}
                     </div>
                   )}
+
                   {validationErrors.length > 0 && (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-1 max-h-40 overflow-auto">
-                      <div className="font-medium">Validation issues:</div>
-                      {validationErrors.slice(0, 8).map((e, i) => (
-                        <div key={i}>• {e}</div>
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-2 max-h-48 overflow-auto">
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium">
+                          Validation issues: {validationErrors.length}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          className="h-7 px-2 bg-white/10 hover:bg-white/15 border border-white/10"
+                          onClick={downloadErrorsTxt}
+                        >
+                          Download .txt
+                        </Button>
+                      </div>
+                      {groupedIssues.map((g) => (
+                        <div key={g.field}>
+                          <div className="opacity-90">{g.field} — {g.count}</div>
+                          {g.samples.map((s, i) => (
+                            <div key={i}>• {s}</div>
+                          ))}
+                        </div>
                       ))}
-                      {validationErrors.length > 8 && (
-                        <div>…(+{validationErrors.length - 8} more)</div>
-                      )}
                     </div>
                   )}
                 </CardContent>
@@ -982,7 +1040,26 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
 
           {/* Main */}
           <main className="lg:col-span-8 space-y-6">
-            {/* Schema card */}
+            {/* Estado vazio (hero) */}
+            {rows.length === 0 && results.length === 0 && !error && (
+              <Card className={PANEL} aria-label="Empty state">
+                <CardContent className="py-10 text-center space-y-3">
+                  <h2 className="text-xl font-semibold">Começa por carregar um CSV</h2>
+                  <p className="text-white/70 text-sm">
+                    Arrasta o ficheiro para a caixa ao lado, confirma o delimitador,
+                    revê a validação e corre o stress test.
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button onClick={downloadSampleCsv}>Download sample</Button>
+                    <Button variant="secondary" onClick={() => inputRef.current?.click()}>
+                      Choose file
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Schema card (compacto) */}
             {(headers.length > 0 || mappedHeaders.length > 0) && (
               <Card className={PANEL}>
                 <CardHeader>
@@ -998,50 +1075,14 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                       }`}
                       title="Required columns status"
                     >
-                      Required {REQUIRED_COLS.length - requiredMissing.length}/
-                      {REQUIRED_COLS.length}
-                      <span className="pointer-events-none absolute left-0 top-[120%] z-50 hidden min-w-[260px] rounded-lg border border-white/10 bg-black/80 p-3 text-xs text-white/80 shadow-2xl backdrop-blur group-hover:block">
-                        <div className="font-medium mb-1">Required columns</div>
-                        <div className="flex flex-wrap gap-1">
-                          {REQUIRED_COLS.map((c) => (
-                            <span
-                              key={c}
-                              className={`rounded-full border px-2 py-0.5 ${
-                                (headers.includes(c) || mappedHeaders.includes(c))
-                                  ? "border-emerald-600/50 bg-emerald-500/10 text-emerald-200"
-                                  : "border-rose-600/50 bg-rose-500/10 text-rose-200"
-                              }`}
-                            >
-                              {c}
-                            </span>
-                          ))}
-                        </div>
-                      </span>
+                      Required {REQUIRED_COLS.length - requiredMissing.length}/{REQUIRED_COLS.length}
                     </span>
 
                     <span
-                      className="px-2 py-1 rounded-full border bg-white/5 text-white/80 border-white/15 group relative cursor-default"
+                      className="px-2 py-1 rounded-full border bg-white/5 text-white/80 border-white/15"
                       title="Optional columns status"
                     >
-                      Optional {OPTIONAL_COLS.length - optionalMissing.length}/
-                      {OPTIONAL_COLS.length}
-                      <span className="pointer-events-none absolute left-0 top-[120%] z-50 hidden min-w-[260px] rounded-lg border border-white/10 bg-black/80 p-3 text-xs text-white/80 shadow-2xl backdrop-blur group-hover:block">
-                        <div className="font-medium mb-1">Optional columns</div>
-                        <div className="flex flex-wrap gap-1">
-                          {OPTIONAL_COLS.map((c) => (
-                            <span
-                              key={c}
-                              className={`rounded-full border px-2 py-0.5 ${
-                                (headers.includes(c) || mappedHeaders.includes(c))
-                                  ? "border-white/20 bg-white/10 text-white/90"
-                                  : "border-white/10 bg-black/30 text-white/60"
-                              }`}
-                            >
-                              {c}
-                            </span>
-                          ))}
-                        </div>
-                      </span>
+                      Optional {OPTIONAL_COLS.length - optionalMissing.length}/{OPTIONAL_COLS.length}
                     </span>
                   </div>
 
@@ -1074,7 +1115,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                   <CardTitle>Results</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* === KPIs === */}
+                  {/* KPIs */}
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
                       <div className="text-sm text-white/70">Equity</div>
@@ -1094,7 +1135,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     </div>
                   </div>
 
-                  {/* === ΔEVE / Equity === */}
+                  {/* ΔEVE / Equity */}
                   <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
                     <div className="mb-2 flex items-center justify-between">
                       <div className="text-sm text-white/80">ΔEVE / Equity vs shock</div>
@@ -1144,7 +1185,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     </div>
                   </div>
 
-                  {/* === ΔNII (12m) === */}
+                  {/* ΔNII (12m) */}
                   <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
                     <div className="mb-2 flex items-center justify-between">
                       <div className="text-sm text-white/80">ΔNII (12m) vs shock</div>
@@ -1191,7 +1232,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     </div>
                   </div>
 
-                  {/* === LCR chart === */}
+                  {/* LCR */}
                   <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
                     <div className="mb-2 flex items-center justify-between">
                       <div className="text-sm text-white/80">Liquidity: HQLA, Outflows & Coverage vs shock</div>
@@ -1206,7 +1247,11 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     </div>
                     <div id="chart-lcr">
                       <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={sortedResults} barCategoryGap={24}>
+                        <BarChart
+                          data={sortedResults}
+                          barCategoryGap={24}
+                          margin={{ top: 8, right: 28, left: 28, bottom: 8 }} // dá espaço aos rótulos
+                        >
                           <CartesianGrid stroke="rgba(255,255,255,0.06)" />
                           <XAxis
                             dataKey="shock_bps"
@@ -1216,6 +1261,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                           />
                           <YAxis
                             yAxisId="left"
+                            width={88} // garante que "1,000,000" cabe
                             tickFormatter={fmtMoney}
                             tick={{ fontSize: 12, fill: "#D1D5DB" }}
                             stroke="#4B5563"
@@ -1223,6 +1269,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                           />
                           <YAxis
                             yAxisId="right"
+                            width={56}
                             orientation="right"
                             tickFormatter={(v) => fmtX(Number(v))}
                             tick={{ fontSize: 12, fill: "#D1D5DB" }}
@@ -1239,20 +1286,20 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                               borderRadius: 12,
                               color: "#E5E7EB",
                             }}
-                            formatter={(val: any, name: any, props: any) => {
+                            formatter={(val: any, _name: any, props: any) => {
                               const key = props?.dataKey as string;
                               if (key === "lcr_hqla" || key === "lcr_outflows") {
                                 const v = Number(val);
                                 return v >= 0 ? `+${fmtMoney(v)}` : fmtMoney(v);
                               }
-                              if (key === "lcr_coverage") {
-                                return fmtX(Number(val));
-                              }
+                              if (key === "lcr_coverage") return fmtX(Number(val));
                               return val;
                             }}
                             labelFormatter={(l) => `Shock: ${l} bps`}
                           />
                           <Legend wrapperStyle={{ color: "#E5E7EB" }} />
+
+                          {/* cores explícitas para evitar preto */}
                           <Bar
                             yAxisId="left"
                             dataKey="lcr_hqla"
@@ -1271,6 +1318,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                             barSize={18}
                             radius={[6, 6, 0, 0]}
                           />
+
                           <Line
                             yAxisId="right"
                             type="monotone"
@@ -1286,7 +1334,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     </div>
                   </div>
 
-                  {/* === Table === */}
+                  {/* Tabela */}
                   <div className="overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
                     <table className="min-w-full text-sm">
                       <thead className="sticky top-0 bg-white/5 backdrop-blur">
@@ -1328,7 +1376,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
         </div>
       </div>
 
-      {/* Schema “View schema” modal */}
+      {/* Schema modal */}
       {schemaOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center"
@@ -1358,6 +1406,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                   schemaBtnRef.current?.focus();
                 }}
                 className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm hover:bg-white/10"
+                aria-label="Close dialog"
               >
                 Close
               </button>
@@ -1395,9 +1444,10 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
         </div>
       )}
 
-      {/* Preview CSV modal (com paginação virtual + debounce) */}
+      {/* Preview CSV modal – toolbar corrigida (responsivo e alinhado) */}
       {previewOpen && (
         <div
+          id="preview-dialog"
           className="fixed inset-0 z-[60] flex items-center justify-center"
           role="dialog"
           aria-modal="true"
@@ -1417,11 +1467,13 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
               previewBtnRef.current?.focus();
             }}
           >
-            <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="mb-3 gap-2 flex flex-col sm:flex-row sm:items-center sm:justify-between">
               <h3 id="preview-title" className="text-lg font-medium">
                 CSV Preview ({previewRowsFiltered.length}/{rows.length})
               </h3>
-              <div className="flex items-center gap-2">
+
+              {/* Toolbar responsiva */}
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   id="preview-search"
                   type="text"
@@ -1429,6 +1481,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                   value={previewQuery}
                   onChange={(e) => setPreviewQuery(e.target.value)}
                   className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm placeholder-white/50 focus:outline-none focus:border-white/20"
+                  aria-label="Search in CSV preview"
                 />
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -1436,6 +1489,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     checked={compactRows}
                     onChange={(e) => setCompactRows(e.target.checked)}
                     className={CHECKBOX}
+                    aria-label="Compact rows"
                   />
                   Compact
                 </label>
@@ -1445,6 +1499,7 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                     value={pageSize}
                     onChange={(e) => setPageSize(Number(e.target.value))}
                     className="h-9 rounded-lg border border-white/10 bg-white/5 px-2 text-sm focus:outline-none"
+                    aria-label="Page size"
                   >
                     {[100, 200, 500, 1000].map((n) => (
                       <option key={n} value={n}>{n}</option>
@@ -1454,31 +1509,25 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                 <Button
                   variant="secondary"
                   onClick={copyPreviewCsv}
-                  className="bg-white/10 hover:bg-white/15 border border-white/10"
+                  className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
                 >
                   Copy (page)
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={downloadPreviewCsv}
-                  className="bg-white/10 hover:bg-white/15 border border-white/10"
+                  className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
                 >
                   Download (filtered)
                 </Button>
-                <Button
-                  onClick={() => {
-                    setPreviewOpen(false);
-                    previewBtnRef.current?.focus();
-                  }}
-                  className="ml-1"
-                >
+                <Button onClick={() => { setPreviewOpen(false); previewBtnRef.current?.focus(); }}  aria-label="Close dialog">
                   Close
                 </Button>
               </div>
             </div>
 
             {/* Pagination controls */}
-            <div className="flex items-center justify-between mb-2 text-xs text-white/70">
+            <div className="flex flex-wrap items-center justify-between mb-2 text-xs text-white/70 gap-2">
               <div>
                 Page {page} / {totalPages} — showing {pageSlice.length} of {previewRowsFiltered.length} filtered rows
               </div>
@@ -1499,6 +1548,22 @@ setHeaders(mappedHeaders.length ? mappedHeaders : hdrs);
                 >
                   Next
                 </Button>
+                <label className="flex items-center gap-1">
+                  Go to
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    className="h-8 w-20 rounded-md border border-white/10 bg-white/5 px-2 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const v = Number((e.target as HTMLInputElement).value);
+                        if (!Number.isNaN(v)) setPage(Math.min(Math.max(1, v), totalPages));
+                      }
+                    }}
+                    aria-label="Go to page"
+                  />
+                </label>
               </div>
             </div>
 
@@ -1647,8 +1712,9 @@ function SchemaModalContent({
   return (
     <div
       ref={containerRef}
-      className={`relative z-10 w-[min(720px,92vw)] ${panelClass} p-4 outline-none`}
+      className={`relative z-10 w-[min(960px,92vw)] ${panelClass} p-4 outline-none`} // largura maior para preview
       tabIndex={-1}
+      role="document"
     >
       {children}
     </div>
