@@ -16,16 +16,236 @@ import {
   BarChart,
   Bar,
   Legend,
-  Tooltip as RechartTooltip, // <-- alias para o recharts
+  Tooltip as RechartTooltip,
 } from "recharts";
 
-// alias para o Tooltip do UI (shadcn)
 import {
   Tooltip as UiTooltip,
   TooltipProvider as UiTooltipProvider,
   TooltipTrigger as UiTooltipTrigger,
   TooltipContent as UiTooltipContent,
 } from "@/components/ui/tooltip";
+
+/* ==================== i18n ==================== */
+type Lang = "pt" | "en";
+const LANG_LS_KEY = "bsts_lang_v07";
+
+const DIC: Record<Lang, Record<string, string>> = {
+  en: {
+    appTitle: "Bank Stress Test Simulator",
+    version: "v0.7.0",
+    dataParams: "Data & Parameters",
+    csvFile: "CSV file",
+    dropHere: "Drag here or choose a file (max {{mb}}MB)",
+    chooseFile: "Choose File",
+    sampleCsv: "Sample CSV",
+    delimiter: "Delimiter",
+    headerRow: "First row contains headers",
+    autoDetect: "Auto (detect)",
+    comma: "Comma (,)",
+    semicolon: "Semicolon (;)",
+    tab: "Tab (\\t)",
+    pipe: "Pipe (|)",
+    afsHaircut: "AFS haircut (0–0.5)",
+    depositRunoff: "Deposit runoff (0–1)",
+    betaCore: "Beta (core)",
+    betaNoncore: "Beta (noncore)",
+    shocks: "Shocks (bps)",
+    previewCsv: "Preview CSV",
+    viewSchema: "View schema",
+    run: "Run stress test",
+    running: "Running...",
+    exportCsv: "Export CSV",
+    exportJson: "Export JSON",
+    tipSample: "Tip: you can download a sample CSV and edit it.",
+    parseErr: "Error reading CSV.",
+    csvLoaded: "CSV loaded successfully.",
+    copyOk: "Preview copied to clipboard.",
+    copyErr: "Could not copy.",
+    jsonExported: "JSON exported.",
+    csvExported: "CSV exported.",
+    needCsv: "Please upload a CSV first.",
+    fixValidation: "There are validation errors. Please fix them.",
+    apiRunErr: "Error running stress test.",
+    emptyTitle: "Start by uploading a CSV",
+    emptySub:
+      "Drag the file to the box on the left, confirm the delimiter, review validation and run the stress test.",
+    downloadSample: "Download sample",
+    chooseFileCta: "Choose file",
+    schema: "Schema",
+    required: "Required",
+    optional: "Optional",
+    requiredStatus: "Required {{ok}}/{{total}}",
+    optionalStatus: "Optional {{ok}}/{{total}}",
+    missingRequired: "Missing required: {{cols}}",
+    autoMap: "Automatic column mapping",
+    expectedSchema: "Expected schema",
+    close: "Close",
+    results: "Results",
+    equity: "Equity",
+    equityHint: "Baseline equity reported by the API.",
+    equitySub: "Base for % in ΔEVE/Equity",
+    bestEve: "Best ΔEVE (% equity)",
+    worstEve: "Worst ΔEVE (% equity)",
+    eveHint: "Δ Economic Value of Equity divided by baseline equity.",
+    bestAmong: "Best among shocks",
+    worstAmong: "Worst among shocks",
+    eveVsShock: "ΔEVE / Equity vs shock",
+    exportPng: "Export PNG",
+    niiVsShock: "ΔNII (12m) vs shock",
+    lcrTitle: "Liquidity: HQLA, Outflows & Coverage vs shock",
+    tableShock: "shock_bps",
+    tableEve: "ΔEVE",
+    tableEveEq: "ΔEVE / Equity",
+    tableNii: "ΔNII (12m)",
+    tableHqla: "HQLA",
+    tableOut: "Outflows",
+    tableCov: "Coverage",
+    validationIssues: "Validation issues: {{n}}",
+    downloadTxt: "Download .txt",
+    topRows: "Top rows with issues",
+    emptyStateCard: "Empty state",
+    previewDialog: "CSV Preview ({{f}}/{{t}})",
+    search: "Search...",
+    compact: "Compact",
+    pageSize: "Page size",
+    copyPage: "Copy (page)",
+    downloadFiltered: "Download (filtered)",
+    pageOf: "Page {{p}} / {{tp}} — showing {{n}} of {{nf}} filtered",
+    first: "First",
+    prev: "Prev",
+    next: "Next",
+    last: "Last",
+    goto: "Go to",
+    gotoPage: "Go to page",
+    noResults:
+      "No results for \"{{q}}\". Check the term or clear the filter.",
+    lang: "Language",
+  },
+  pt: {
+    appTitle: "Bank Stress Test Simulator",
+    version: "v0.7.0",
+    dataParams: "Dados & Parâmetros",
+    csvFile: "Ficheiro CSV",
+    dropHere: "Arrasta aqui ou escolhe um ficheiro (máx {{mb}}MB)",
+    chooseFile: "Escolher ficheiro",
+    sampleCsv: "Sample CSV",
+    delimiter: "Delimitador",
+    headerRow: "Primeira linha tem cabeçalhos",
+    autoDetect: "Auto (detectar)",
+    comma: "Vírgula (,)",
+    semicolon: "Ponto e vírgula (;)",
+    tab: "Tab (\\t)",
+    pipe: "Pipe (|)",
+    afsHaircut: "Corte AFS (0–0.5)",
+    depositRunoff: "Runoff depósitos (0–1)",
+    betaCore: "Beta (core)",
+    betaNoncore: "Beta (noncore)",
+    shocks: "Choques (bps)",
+    previewCsv: "Pré-visualizar CSV",
+    viewSchema: "Ver schema",
+    run: "Correr stress test",
+    running: "A correr...",
+    exportCsv: "Exportar CSV",
+    exportJson: "Exportar JSON",
+    tipSample:
+      "Dica: podes descarregar um sample CSV e editar.",
+    parseErr: "Erro ao ler o CSV.",
+    csvLoaded: "CSV carregado com sucesso.",
+    copyOk: "Preview copiada para o clipboard.",
+    copyErr: "Não foi possível copiar.",
+    jsonExported: "JSON exportado.",
+    csvExported: "CSV exportado.",
+    needCsv: "Carrega um CSV primeiro.",
+    fixValidation: "Há erros de validação. Corrige antes de correr.",
+    apiRunErr: "Erro ao correr o stress test.",
+    emptyTitle: "Começa por carregar um CSV",
+    emptySub:
+      "Arrasta o ficheiro para a caixa ao lado, confirma o delimitador, revê a validação e corre o stress test.",
+    downloadSample: "Descarregar sample",
+    chooseFileCta: "Escolher ficheiro",
+    schema: "Schema",
+    required: "Obrigatórias",
+    optional: "Opcionais",
+    requiredStatus: "Obrigatórias {{ok}}/{{total}}",
+    optionalStatus: "Opcionais {{ok}}/{{total}}",
+    missingRequired: "Em falta: {{cols}}",
+    autoMap: "Mapeamento automático de colunas",
+    expectedSchema: "Schema esperado",
+    close: "Fechar",
+    results: "Resultados",
+    equity: "Equity",
+    equityHint: "Equity de partida (baseline) reportado pela API.",
+    equitySub: "Base para % em ΔEVE/Equity",
+    bestEve: "Melhor ΔEVE (% equity)",
+    worstEve: "Pior ΔEVE (% equity)",
+    eveHint:
+      "Δ Economic Value of Equity dividido por Equity baseline.",
+    bestAmong: "Melhor cenário entre os choques",
+    worstAmong: "Pior cenário entre os choques",
+    eveVsShock: "ΔEVE / Equity vs choque",
+    exportPng: "Exportar PNG",
+    niiVsShock: "ΔNII (12m) vs choque",
+    lcrTitle: "Liquidez: HQLA, Outflows & Coverage vs choque",
+    tableShock: "shock_bps",
+    tableEve: "ΔEVE",
+    tableEveEq: "ΔEVE / Equity",
+    tableNii: "ΔNII (12m)",
+    tableHqla: "HQLA",
+    tableOut: "Outflows",
+    tableCov: "Coverage",
+    validationIssues: "Problemas de validação: {{n}}",
+    downloadTxt: "Descarregar .txt",
+    topRows: "Top linhas com issues",
+    emptyStateCard: "Estado vazio",
+    previewDialog: "Preview CSV ({{f}}/{{t}})",
+    search: "Pesquisar...",
+    compact: "Compacto",
+    pageSize: "Tamanho de página",
+    copyPage: "Copiar (página)",
+    downloadFiltered: "Download (filtradas)",
+    pageOf:
+      "Página {{p}} / {{tp}} — a mostrar {{n}} de {{nf}} filtradas",
+    first: "Primeira",
+    prev: "Anterior",
+    next: "Seguinte",
+    last: "Última",
+    goto: "Ir para",
+    gotoPage: "Ir para página",
+    noResults:
+      "Sem resultados para \"{{q}}\". Verifica o termo ou limpa o filtro.",
+    lang: "Idioma",
+  },
+};
+
+function useI18n() {
+  const [lang, setLang] = useState<Lang>("en");
+  useEffect(() => {
+    // 1ª vez: preferir locale do browser
+    const saved = localStorage.getItem(LANG_LS_KEY) as Lang | null;
+    if (saved === "pt" || saved === "en") {
+      setLang(saved);
+    } else {
+      const n = navigator.language || navigator.languages?.[0] || "en";
+      const guess: Lang = n.toLowerCase().startsWith("pt") ? "pt" : "en";
+      setLang(guess);
+      localStorage.setItem(LANG_LS_KEY, guess);
+    }
+  }, []);
+  const t = (key: string, vars?: Record<string, string | number>) => {
+    const raw = DIC[lang][key] ?? key;
+    if (!vars) return raw;
+    return Object.entries(vars).reduce(
+      (s, [k, v]) => s.replaceAll(`{{${k}}}`, String(v)),
+      raw
+    );
+  };
+  const set = (l: Lang) => {
+    setLang(l);
+    localStorage.setItem(LANG_LS_KEY, l);
+  };
+  return { lang, setLang: set, t };
+}
 
 /* ==================== Utils & formatters ==================== */
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -37,12 +257,26 @@ const fmtX = (x: number, digits = 2) =>
   `${(Number.isFinite(x) ? x : 0).toFixed(digits)}x`;
 const signed = (s: string) =>
   s.startsWith("-") || s.startsWith("+") ? s : `+${s}`;
-const fmtSignedMoney = (n: number) => (n >= 0 ? `+${fmtMoney(n)}` : fmtMoney(n));
+const fmtSignedMoney = (n: number) =>
+  n >= 0 ? `+${fmtMoney(n)}` : fmtMoney(n);
 const fmtSignedPct = (p: number, digits = 1) =>
   p >= 0 ? `+${fmtPct(p, digits)}` : fmtPct(p, digits);
 
-const LS_KEY = "bsts_v050_params";
+const LS_KEY = "bsts_v060_params";
 const MAX_FILE_MB = 10;
+
+/* ---- motion (prefers-reduced-motion) ---- */
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(!!mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return reduced;
+}
 
 /* ---- estilos ---- */
 const PANEL =
@@ -95,7 +329,7 @@ const SYNONYMS: Record<RequiredCol | OptionalCol, string[]> = {
   type: ["type", "instrument_type", "product_type", "kind"],
   name: ["name", "description", "title"],
   amount: ["amount", "principal", "balance", "notional", "par"],
-  rate: ["rate", "int_rate", "coupon", "interest_rate", "yld", "yield"], // <- corrigido
+  rate: ["rate", "int_rate", "coupon", "interest_rate", "yld", "yield"],
   duration: ["duration", "tenor", "term", "months", "maturity_months"],
   category: ["category", "side", "asset_liability", "asset_or_liability"],
   fixed_float: ["fixed_float", "rate_type", "fixed_or_float", "fix_float"],
@@ -353,6 +587,33 @@ function downloadJson(filename: string, obj: any) {
   URL.revokeObjectURL(url);
 }
 
+/* ==================== Preview helpers: highlight & virtualization ==================== */
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function highlightMatch(text: string, query: string) {
+  if (!query) return text;
+  const pat = new RegExp(escapeRegExp(query), "ig");
+  const parts = String(text ?? "").split(pat);
+  const matches = String(text ?? "").match(pat) || [];
+  if (matches.length === 0) return text;
+  const out: React.ReactNode[] = [];
+  parts.forEach((p, i) => {
+    out.push(p);
+    if (i < matches.length) {
+      out.push(
+        <mark
+          key={`m-${i}`}
+          className="bg-yellow-300/30 text-yellow-200 px-0.5 rounded-sm"
+        >
+          {matches[i]}
+        </mark>
+      );
+    }
+  });
+  return <>{out}</>;
+}
+
 /* ==================== App ==================== */
 type TableColKey =
   | "shock_bps"
@@ -364,6 +625,9 @@ type TableColKey =
   | "lcr_coverage";
 
 export default function App() {
+  const { lang, setLang, t } = useI18n();
+  const reducedMotion = useReducedMotion();
+
   // CSV preview state
   const [rows, setRows] = useState<Row[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -422,6 +686,13 @@ export default function App() {
 
   const [showSchema, setShowSchema] = useState(true);
 
+  // Parsing state + perf metrics
+  const [parsing, setParsing] = useState(false);
+  const parseStartRef = useRef<number | null>(null);
+  const [parseMs, setParseMs] = useState<number | null>(null);
+  const firstRenderStartRef = useRef<number | null>(null);
+  const [firstRenderMs, setFirstRenderMs] = useState<number | null>(null);
+
   // Persistência
   useEffect(() => {
     try {
@@ -476,6 +747,8 @@ export default function App() {
     setValidationErrors([]);
     setHeaderMapState({});
     setMappedHeaders([]);
+    setParsing(true);
+    parseStartRef.current = performance.now();
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -499,12 +772,19 @@ export default function App() {
         dynamicTyping: true,
         transform: (val: string) => parsePTNumberLike(val),
         complete: (res) => {
+          const end = performance.now();
+          setParseMs(end - (parseStartRef.current || end));
+          if (import.meta?.env?.DEV) {
+            console.log("[perf] parse ms:", end - (parseStartRef.current || end));
+          }
+
           if (res.errors && res.errors.length) {
             const msg = `Parse error on row ${res.errors[0].row}: ${res.errors[0].message}`;
             setError(msg);
-            showToast("err", "Erro ao ler o CSV.");
+            showToast("err", t("parseErr"));
             setRows([]);
             setHeaders([]);
+            setParsing(false);
             return;
           }
           const data = (res.data as Row[]).filter((r) => Object.keys(r).length);
@@ -540,16 +820,20 @@ export default function App() {
           reader2.onerror = () => setRawCsv("");
           reader2.readAsText(f);
 
-          showToast("ok", "CSV carregado com sucesso.");
+          showToast("ok", t("csvLoaded"));
+          setParsing(false);
+          firstRenderStartRef.current = performance.now();
         },
         error: (err) => {
           setError(err.message || "Unknown error while parsing CSV.");
-          showToast("err", "Erro ao ler o CSV.");
+          showToast("err", t("parseErr"));
+          setParsing(false);
         },
       });
     };
     reader.onerror = () => {
-      showToast("err", "Não foi possível ler o ficheiro.");
+      showToast("err", t("parseErr"));
+      setParsing(false);
     };
     reader.readAsText(f);
   }
@@ -560,12 +844,12 @@ export default function App() {
     if (sizeMb > MAX_FILE_MB) {
       showToast(
         "err",
-        `Ficheiro muito grande (${sizeMb.toFixed(1)}MB). Máx ${MAX_FILE_MB}MB.`
+        t("dropHere", { mb: MAX_FILE_MB })
       );
       return;
     }
     if (!/\.csv$/i.test(f.name)) {
-      showToast("err", "Ficheiro inválido (esperado .csv)");
+      showToast("err", "Invalid file (expected .csv)");
       return;
     }
     parseFile(f);
@@ -620,11 +904,11 @@ export default function App() {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    const t = window.setTimeout(
+    const tmr = window.setTimeout(
       () => setDebouncedQuery(previewQuery.trim().toLowerCase()),
       300
     );
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(tmr);
   }, [previewQuery]);
 
   const previewRowsFiltered = useMemo(() => {
@@ -646,20 +930,30 @@ export default function App() {
     return previewRowsFiltered.slice(start, start + pageSize);
   }, [previewRowsFiltered, page, pageSize]);
 
+  // primeira render do preview (para métrica básica)
+  useEffect(() => {
+    if (firstRenderStartRef.current != null && rows.length) {
+      const ms = performance.now() - firstRenderStartRef.current;
+      setFirstRenderMs(ms);
+      if (import.meta?.env?.DEV) {
+        console.log("[perf] initial preview render ms:", ms);
+      }
+      firstRenderStartRef.current = null;
+    }
+  }, [rows, debouncedQuery, pageSize]);
+
   /* ---- Run API ---- */
   async function runStressTest() {
     setApiError("");
     setResults([]);
     if (!rawCsv) {
-      setApiError("Please upload a CSV first.");
-      showToast("err", "Carrega um CSV primeiro.");
+      setApiError(t("needCsv"));
+      showToast("err", t("needCsv"));
       return;
     }
     if (validationErrors.length) {
-      setApiError(
-        "Há erros de validação nos dados. Corrige antes de correr o stress test."
-      );
-      showToast("err", "Corrige os erros de validação.");
+      setApiError(t("fixValidation"));
+      showToast("err", t("fixValidation"));
       return;
     }
     setShowSchema(false);
@@ -692,10 +986,10 @@ export default function App() {
       const data = await resp.json();
       setEquity(data.equity ?? 0);
       setResults(Array.isArray(data.results) ? data.results : []);
-      showToast("ok", "Stress test concluído.");
+      showToast("ok", "OK");
     } catch (e: any) {
       setApiError(e?.message || "Request failed.");
-      showToast("err", "Erro ao correr o stress test.");
+      showToast("err", t("apiRunErr"));
     } finally {
       setLoading(false);
     }
@@ -725,7 +1019,7 @@ export default function App() {
     a.download = "stress_results.csv";
     a.click();
     URL.revokeObjectURL(url);
-    showToast("ok", "CSV exportado.");
+    showToast("ok", t("csvExported"));
   }
 
   function exportResultsJson() {
@@ -743,7 +1037,7 @@ export default function App() {
       results,
     };
     downloadJson("stress_results.json", payload);
-    showToast("ok", "JSON exportado.");
+    showToast("ok", t("jsonExported"));
   }
 
   /* ---- Derived data ---- */
@@ -781,8 +1075,8 @@ export default function App() {
       pageSlice as Row[]
     );
     navigator.clipboard.writeText(csv).then(
-      () => showToast("ok", "Preview copiado para o clipboard."),
-      () => showToast("err", "Não foi possível copiar.")
+      () => showToast("ok", t("copyOk")),
+      () => showToast("err", t("copyErr"))
     );
   }
 
@@ -881,7 +1175,8 @@ export default function App() {
   }) => {
     const active = sortCol === col;
     const dir = active ? sortDir : undefined;
-    const ariaSort = active ? (dir === "asc" ? "ascending" : "descending") : "none";
+    const ariaSort =
+      active ? (dir === "asc" ? "ascending" : "descending") : "none";
     return (
       <th className="text-left px-3 py-2 border-b border-white/10">
         <button
@@ -896,7 +1191,7 @@ export default function App() {
               setSortDir(col === "shock_bps" ? "asc" : "desc");
             }
           }}
-          title="Ordenar"
+          title="Sort"
         >
           <span>{label}</span>
           <span className="opacity-70 text-[11px]">
@@ -929,15 +1224,29 @@ export default function App() {
     </UiTooltip>
   );
 
-  const kpiBox = (label: string, value: string, hint?: string, sub?: string) => (
-    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
-      <div className="text-xs text-white/70 flex items-center">
+  const kpiBox = (
+    label: string,
+    value: string,
+    hint?: string,
+    sub?: string
+  ) => (
+    <div className="rounded-xl border border-white/15 bg-white/[0.06] backdrop-blur p-4">
+      <div className="text-xs text-white/80 flex items-center">
         {label}
         {hint ? kpiHintIcon(hint) : null}
       </div>
-      <div className="mt-1 text-[32px] leading-[36px] font-semibold">{value}</div>
-      {sub ? <div className="mt-1 text-[12px] text-white/60">{sub}</div> : null}
+      <div className="mt-1 text-[32px] leading-[36px] font-semibold">
+        {value}
+      </div>
+      {sub ? <div className="mt-1 text-[12px] text-white/70">{sub}</div> : null}
     </div>
+  );
+
+  /* -------- Skeletons -------- */
+  const Skeleton = ({ className = "" }: { className?: string }) => (
+    <div
+      className={`${!reducedMotion ? "animate-pulse" : ""} rounded-lg bg-white/10 ${className}`}
+    />
   );
 
   return (
@@ -950,11 +1259,14 @@ export default function App() {
           <div
             role="status"
             aria-live="polite"
-            className={`fixed right-4 top-4 z-[100] rounded-xl border px-3 py-2 text-sm backdrop-blur ${
+            className={`fixed right-4 top-4 z-[100] rounded-xl border px-3 py-2 text-sm ${
+              !reducedMotion ? "backdrop-blur" : ""
+            } ${
               toast.type === "ok"
-                ? "bg-emerald-500/15 text-emerald-200 border-emerald-600/40"
-                : "bg-rose-500/15 text-rose-200 border-rose-600/40"
+                ? "bg-emerald-500/20 text-emerald-200 border-emerald-400/50"
+                : "bg-rose-500/20 text-rose-200 border-rose-400/50"
             }`}
+            data-testid="toast"
           >
             {toast.msg}
           </div>
@@ -962,13 +1274,48 @@ export default function App() {
 
         <div className="container max-w-6xl py-8 space-y-6">
           {/* Header */}
-          <header className="flex items-center justify-between">
+          <header className="flex items-center justify-between gap-3">
             <h1 className="text-[32px] leading-[36px] font-semibold tracking-tight">
-              Bank Stress Test Simulator
+              {t("appTitle")}
             </h1>
-            <Badge variant="secondary" className="text-xs" aria-label="App version">
-              v0.5.0
-            </Badge>
+
+            <div className="flex items-center gap-2">
+              {/* Language toggle */}
+              <div
+                role="group"
+                aria-label={t("lang")}
+                className="inline-flex rounded-xl border border-white/10 overflow-hidden"
+              >
+                <button
+                  type="button"
+                  onClick={() => setLang("pt")}
+                  className={`px-3 py-1.5 text-xs ${
+                    lang === "pt" ? "bg-white/20" : "bg-white/5"
+                  } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
+                  aria-pressed={lang === "pt"}
+                >
+                  PT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLang("en")}
+                  className={`px-3 py-1.5 text-xs ${
+                    lang === "en" ? "bg-white/20" : "bg-white/5"
+                  } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
+                  aria-pressed={lang === "en"}
+                >
+                  EN
+                </button>
+              </div>
+
+              <Badge
+                variant="secondary"
+                className="text-xs"
+                aria-label="App version"
+              >
+                {t("version")}
+              </Badge>
+            </div>
           </header>
 
           {/* Layout */}
@@ -978,8 +1325,11 @@ export default function App() {
               <div className="lg:sticky lg:top-6 space-y-6">
                 <Card className={PANEL} aria-labelledby="data-params-title">
                   <CardHeader>
-                    <CardTitle id="data-params-title" className="text-[20px] leading-[24px]">
-                      Data & Parameters
+                    <CardTitle
+                      id="data-params-title"
+                      className="text-[20px] leading-[24px]"
+                    >
+                      {t("dataParams")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -992,35 +1342,50 @@ export default function App() {
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+                        if (e.key === "Enter" || e.key === " ")
+                          inputRef.current?.click();
                       }}
-                      aria-label="Drop CSV here or choose a file"
+                      aria-label={t("dropHere", { mb: MAX_FILE_MB })}
                       className={`rounded-xl border p-3 transition ${
-                        dragActive ? "border-sky-400 bg-sky-400/10" : "border-white/10 bg-white/5"
+                        dragActive
+                          ? "border-sky-400 bg-sky-400/10"
+                          : "border-white/10 bg-white/5"
                       }`}
+                      data-testid="upload-zone"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm">
-                          <div className="font-medium">CSV file</div>
-                          <div className="text-xs text-white/60">
-                            Arrasta aqui ou escolhe um ficheiro (máx {MAX_FILE_MB}MB)
+                          <div className="font-medium">{t("csvFile")}</div>
+                          <div className="text-xs text-white/70">
+                            {t("dropHere", { mb: MAX_FILE_MB })}
                           </div>
+                          {parseMs != null && (
+                            <div className="text-xs text-white/60 mt-1">
+                              Parse: {Math.round(parseMs)} ms
+                              {firstRenderMs != null
+                                ? ` · 1st render: ${Math.round(firstRenderMs)} ms`
+                                : ""}
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col gap-2 w-full">
                           <Button
                             variant="secondary"
                             className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                             onClick={() => inputRef.current?.click()}
+                            aria-label={t("chooseFile")}
+                            data-testid="choose-file-btn"
                           >
-                            Choose File
+                            {t("chooseFile")}
                           </Button>
                           <Button
                             variant="secondary"
                             className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                             onClick={downloadSampleCsv}
-                            title="Descarregar exemplo com as colunas certas"
+                            title={t("sampleCsv")}
+                            data-testid="sample-btn"
                           >
-                            Sample CSV
+                            {t("sampleCsv")}
                           </Button>
                         </div>
                       </div>
@@ -1031,25 +1396,30 @@ export default function App() {
                         accept=".csv,text/csv"
                         onChange={onFileChange}
                         className="hidden"
+                        aria-label={t("chooseFile")}
+                        data-testid="file-input"
                       />
                     </div>
 
                     {/* Delimiter + checkbox */}
                     <div className="flex items-center gap-3">
                       <div className="flex-1">
-                        <label className="block text-xs mb-1 opacity-80">Delimiter</label>
+                        <label className="block text-xs mb-1 opacity-80">
+                          {t("delimiter")}
+                        </label>
                         <div className="relative">
                           <select
                             value={delimiter}
                             onChange={(e) => setDelimiter(e.target.value)}
                             className={SELECT_FIELD}
-                            aria-label="CSV delimiter"
+                            aria-label={t("delimiter")}
+                            data-testid="delimiter-select"
                           >
-                            <option value="auto">Auto (detect)</option>
-                            <option value=",">Comma (,)</option>
-                            <option value=";">Semicolon (;)</option>
-                            <option value="\t">Tab (\t)</option>
-                            <option value="|">Pipe (|)</option>
+                            <option value="auto">{t("autoDetect")}</option>
+                            <option value=",">{t("comma")}</option>
+                            <option value=";">{t("semicolon")}</option>
+                            <option value="\t">{t("tab")}</option>
+                            <option value="|">{t("pipe")}</option>
                           </select>
                           <svg
                             aria-hidden="true"
@@ -1074,15 +1444,16 @@ export default function App() {
                           checked={headerRow}
                           onChange={(e) => setHeaderRow(e.target.checked)}
                           className={CHECKBOX}
-                          aria-label="First row contains headers"
+                          aria-label={t("headerRow")}
+                          data-testid="headers-checkbox"
                         />
-                        First row contains headers
+                        {t("headerRow")}
                       </label>
                     </div>
 
                     {/* === Parameters === */}
                     <label className="text-sm block">
-                      AFS haircut (0–0.5)
+                      {t("afsHaircut")}
                       <input
                         type="number"
                         step="0.01"
@@ -1091,27 +1462,29 @@ export default function App() {
                         value={afsHaircut}
                         onChange={(e) => setAfsHaircut(Number(e.target.value))}
                         className={FIELD_NUMBER}
-                        aria-label="AFS haircut"
+                        aria-label={t("afsHaircut")}
                       />
                     </label>
 
                     <label className="text-sm block">
-                      Deposit runoff (0–1)
+                      {t("depositRunoff")}
                       <input
                         type="number"
                         step="0.01"
                         min={0}
                         max={1}
                         value={depositRunoff}
-                        onChange={(e) => setDepositRunoff(Number(e.target.value))}
+                        onChange={(e) =>
+                          setDepositRunoff(Number(e.target.value))
+                        }
                         className={FIELD_NUMBER}
-                        aria-label="Deposit runoff"
+                        aria-label={t("depositRunoff")}
                       />
                     </label>
 
                     <div className="grid grid-cols-2 gap-3">
                       <label className="text-sm block">
-                        Beta (core)
+                        {t("betaCore")}
                         <input
                           type="number"
                           step="0.05"
@@ -1120,26 +1493,28 @@ export default function App() {
                           value={betaCore}
                           onChange={(e) => setBetaCore(Number(e.target.value))}
                           className={FIELD_NUMBER}
-                          aria-label="Beta core"
+                          aria-label={t("betaCore")}
                         />
                       </label>
                       <label className="text-sm block">
-                        Beta (noncore)
+                        {t("betaNoncore")}
                         <input
                           type="number"
                           step="0.05"
                           min={0}
                           max={1}
                           value={betaNoncore}
-                          onChange={(e) => setBetaNoncore(Number(e.target.value))}
+                          onChange={(e) =>
+                            setBetaNoncore(Number(e.target.value))
+                          }
                           className={FIELD_NUMBER}
-                          aria-label="Beta noncore"
+                          aria-label={t("betaNoncore")}
                         />
                       </label>
                     </div>
 
                     <label className="text-sm block">
-                      Shocks (bps)
+                      {t("shocks")}
                       <input
                         type="text"
                         value={shocks.join(",")}
@@ -1152,7 +1527,7 @@ export default function App() {
                         }}
                         className={FIELD}
                         placeholder="-200,-100,0,100,200"
-                        aria-label="Shock list"
+                        aria-label={t("shocks")}
                       />
                     </label>
 
@@ -1163,16 +1538,20 @@ export default function App() {
                           variant="secondary"
                           className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                           onClick={() => setPreviewOpen(true)}
-                          disabled={headers.length === 0 && rows.length === 0}
+                          disabled={
+                            (headers.length === 0 && rows.length === 0) ||
+                            parsing
+                          }
                           title={
                             headers.length === 0 && rows.length === 0
-                              ? "Upload a CSV first"
-                              : "Preview parsed CSV"
+                              ? t("needCsv")
+                              : t("previewCsv")
                           }
                           aria-haspopup="dialog"
                           aria-controls="preview-dialog"
+                          data-testid="preview-btn"
                         >
-                          Preview CSV
+                          {t("previewCsv")}
                         </Button>
                         <Button
                           ref={schemaBtnRef}
@@ -1180,21 +1559,34 @@ export default function App() {
                           className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
                           onClick={() => setSchemaOpen(true)}
                           aria-haspopup="dialog"
+                          data-testid="schema-btn"
                         >
-                          View schema
+                          {t("viewSchema")}
                         </Button>
                       </div>
 
-                      <Button onClick={runStressTest} disabled={loading} className="w-full">
+                      <Button
+                        onClick={runStressTest}
+                        disabled={loading}
+                        className="w-full"
+                        data-testid="run-btn"
+                      >
                         {loading ? (
-                          <span className="inline-flex items-center gap-2" aria-busy="true">
-                            <span className="h-3 w-3 animate-pulse rounded-full bg-white/80" />
-                            <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:150ms]" />
-                            <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:300ms]" />
-                            Running...
+                          <span
+                            className="inline-flex items-center gap-2"
+                            aria-busy="true"
+                          >
+                            {!reducedMotion && (
+                              <>
+                                <span className="h-3 w-3 animate-pulse rounded-full bg-white/80" />
+                                <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:150ms]" />
+                                <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:300ms]" />
+                              </>
+                            )}
+                            {t("running")}
                           </span>
                         ) : (
-                          "Run stress test"
+                          t("run")
                         )}
                       </Button>
 
@@ -1205,10 +1597,13 @@ export default function App() {
                           onClick={exportResultsCsv}
                           disabled={results.length === 0}
                           title={
-                            results.length === 0 ? "Run a stress test first" : "Export results as CSV"
+                            results.length === 0
+                              ? t("run")
+                              : t("exportCsv")
                           }
+                          data-testid="export-csv-btn"
                         >
-                          Export CSV
+                          {t("exportCsv")}
                         </Button>
                         <Button
                           variant="secondary"
@@ -1216,43 +1611,67 @@ export default function App() {
                           onClick={exportResultsJson}
                           disabled={results.length === 0}
                           title={
-                            results.length === 0 ? "Run a stress test first" : "Export results as JSON"
+                            results.length === 0
+                              ? t("run")
+                              : t("exportJson")
                           }
+                          data-testid="export-json-btn"
                         >
-                          Export JSON
+                          {t("exportJson")}
                         </Button>
                       </div>
                     </div>
 
-                    {!headers.length && !error && rows.length === 0 && (
-                      <p className="text-xs text-white/60">
-                        Dica: podes descarregar um{" "}
-                        <button className="underline" onClick={downloadSampleCsv}>
-                          sample CSV
-                        </button>{" "}
-                        e editar.
-                      </p>
+                    {!headers.length &&
+                      !error &&
+                      rows.length === 0 &&
+                      !parsing && (
+                        <p className="text-xs text-white/70">
+                          {t("tipSample")}{" "}
+                          <button
+                            className="underline"
+                            onClick={downloadSampleCsv}
+                            data-testid="download-sample-inline"
+                          >
+                            {t("sampleCsv")}
+                          </button>
+                          .
+                        </p>
+                      )}
+
+                    {parsing && (
+                      <div className="space-y-2" aria-busy="true">
+                        <Skeleton className="h-3 w-2/3" />
+                        <Skeleton className="h-3 w-1/3" />
+                        <Skeleton className="h-10 w-full" />
+                      </div>
                     )}
 
                     {(apiError || error) && (
                       <div
-                        className="rounded-lg border border-red-500/30 bg-red-500/15 p-3 text-xs text-red-200"
+                        className="rounded-lg border border-red-500/40 bg-red-500/20 p-3 text-xs text-red-100"
                         role="alert"
+                        data-testid="error-box"
                       >
                         {apiError || error}
                       </div>
                     )}
 
                     {validationErrors.length > 0 && (
-                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-2 max-h-48 overflow-auto">
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-2 max-h-48 overflow-auto" data-testid="validation-box">
                         <div className="flex items-center justify-between">
-                          <div className="font-medium">Validation issues: {validationErrors.length}</div>
+                          <div className="font-medium">
+                            {t("validationIssues", {
+                              n: validationErrors.length,
+                            })}
+                          </div>
                           <Button
                             variant="secondary"
                             className="h-7 px-2 bg-white/10 hover:bg-white/15 border border-white/10"
                             onClick={downloadErrorsTxt}
+                            data-testid="download-errors-btn"
                           >
-                            Download .txt
+                            {t("downloadTxt")}
                           </Button>
                         </div>
                         {groupedIssues.map((g) => (
@@ -1267,9 +1686,11 @@ export default function App() {
                         ))}
                         {groupedByRow.length > 0 && (
                           <div className="mt-2">
-                            <div className="opacity-90">Top rows with issues</div>
+                            <div className="opacity-90">{t("topRows")}</div>
                             {groupedByRow.slice(0, 5).map((g) => (
-                              <div key={g.row}>• Row {g.row}: {g.count}</div>
+                              <div key={g.row}>
+                                • Row {g.row}: {g.count}
+                              </div>
                             ))}
                           </div>
                         )}
@@ -1283,396 +1704,485 @@ export default function App() {
             {/* Main */}
             <main className="lg:col-span-8 space-y-6">
               {/* Estado vazio */}
-              {rows.length === 0 && results.length === 0 && !error && (
-                <Card className={PANEL} aria-label="Empty state">
+              {rows.length === 0 && results.length === 0 && !error && !parsing && (
+                <Card className={PANEL} aria-label={t("emptyStateCard")}>
                   <CardContent className="py-10 text-center space-y-3">
                     <h2 className="text-[24px] leading-[28px] font-semibold">
-                      Começa por carregar um CSV
+                      {t("emptyTitle")}
                     </h2>
-                    <p className="text-white/70 text-sm">
-                      Arrasta o ficheiro para a caixa ao lado, confirma o delimitador, revê a
-                      validação e corre o stress test.
-                    </p>
+                    <p className="text-white/80 text-sm">{t("emptySub")}</p>
                     <div className="flex items-center justify-center gap-2">
-                      <Button onClick={downloadSampleCsv}>Download sample</Button>
-                      <Button variant="secondary" onClick={() => inputRef.current?.click()}>
-                        Choose file
+                      <Button onClick={downloadSampleCsv}>
+                        {t("downloadSample")}
                       </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => inputRef.current?.click()}
+                        data-testid="choose-file-cta"
+                      >
+                        {t("chooseFileCta")}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {parsing && (
+                <Card className={PANEL} aria-label="Parsing skeleton">
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-6 w-40" />
+                    <Skeleton className="h-40 w-full" />
+                    <div className="grid grid-cols-3 gap-3">
+                      <Skeleton className="h-20" />
+                      <Skeleton className="h-20" />
+                      <Skeleton className="h-20" />
                     </div>
                   </CardContent>
                 </Card>
               )}
 
               {/* Schema card */}
-                {showSchema && (headers.length > 0 || mappedHeaders.length > 0) && (
-                <Card className={PANEL}>
-                  <CardHeader>
-                    <CardTitle className="text-[20px] leading-[24px]">Schema</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span
-                        className={`px-2 py-1 rounded-full border group relative cursor-default ${
-                          requiredMissing.length === 0
-                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-600"
-                            : "bg-red-500/15 text-red-300 border-red-600"
-                        }`}
-                        title="Required columns status"
-                      >
-                        Required {REQUIRED_COLS.length - requiredMissing.length}/
-                        {REQUIRED_COLS.length}
-                      </span>
+              {showSchema &&
+                (headers.length > 0 || mappedHeaders.length > 0) &&
+                !parsing && (
+                  <Card className={PANEL}>
+                    <CardHeader>
+                      <CardTitle className="text-[20px] leading-[24px]">
+                        {t("schema")}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span
+                          className={`px-2 py-1 rounded-full border group relative cursor-default ${
+                            requiredMissing.length === 0
+                              ? "bg-emerald-500/20 text-emerald-200 border-emerald-500/60"
+                              : "bg-red-500/20 text-red-200 border-red-500/60"
+                          }`}
+                          title="Required columns status"
+                        >
+                          {t("requiredStatus", {
+                            ok: REQUIRED_COLS.length - requiredMissing.length,
+                            total: REQUIRED_COLS.length,
+                          })}
+                        </span>
 
-                      <span
-                        className="px-2 py-1 rounded-full border bg-white/5 text-white/80 border-white/15"
-                        title="Optional columns status"
-                      >
-                        Optional {OPTIONAL_COLS.length - optionalMissing.length}/
-                        {OPTIONAL_COLS.length}
-                      </span>
-                    </div>
-
-                    {requiredMissing.length > 0 && (
-                      <p className="text-xs text-red-300">
-                        Missing required: {requiredMissing.join(", ")}
-                      </p>
-                    )}
-
-                    {Object.keys(headerMapState).length > 0 && (
-                      <div className="text-xs text-white/70">
-                        <div className="font-medium mb-1">Automatic column mapping</div>
-                        <ul className="list-disc ml-5 space-y-0.5">
-                          {Object.entries(headerMapState).map(([orig, exp]) => (
-                            <li key={orig}>
-                              <span className="text-white/90">{orig}</span> →{" "}
-                              <span className="text-emerald-300">{exp}</span>
-                            </li>
-                          ))}
-                        </ul>
+                        <span
+                          className="px-2 py-1 rounded-full border bg-white/10 text-white/90 border-white/20"
+                          title="Optional columns status"
+                        >
+                          {t("optionalStatus", {
+                            ok: OPTIONAL_COLS.length - optionalMissing.length,
+                            total: OPTIONAL_COLS.length,
+                          })}
+                        </span>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
 
-              {results.length > 0 && (
+                      {requiredMissing.length > 0 && (
+                        <p className="text-xs text-red-300">
+                          {t("missingRequired", {
+                            cols: requiredMissing.join(", "),
+                          })}
+                        </p>
+                      )}
+
+                      {Object.keys(headerMapState).length > 0 && (
+                        <div className="text-xs text-white/80">
+                          <div className="font-medium mb-1">
+                            {t("autoMap")}
+                          </div>
+                          <ul className="list-disc ml-5 space-y-0.5">
+                            {Object.entries(headerMapState).map(
+                              ([orig, exp]) => (
+                                <li key={orig}>
+                                  <span className="text-white">{orig}</span> →{" "}
+                                  <span className="text-emerald-300">{exp}</span>
+                                </li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+              {/* Results */}
+              {(results.length > 0 || loading) && (
                 <Card className={PANEL}>
                   <CardHeader>
-                    <CardTitle className="text-[24px] leading-[28px]">Results</CardTitle>
+                    <CardTitle className="text-[24px] leading-[28px]">
+                      {t("results")}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* KPIs com hints */}
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      {kpiBox(
-                        "Equity",
-                        fmtMoney(equity),
-                        "Equity de partida (baseline) reportado pela API.",
-                        "Base para % em ΔEVE/Equity"
-                      )}
-                      {kpiBox(
-                        "Best ΔEVE (% equity)",
-                        (() => {
-                          const best = Math.max(
-                            ...results.map((r) => r.eve_pct_equity * 100)
-                          );
-                          return fmtSignedPct(best, 1);
-                        })(),
-                        "Δ Economic Value of Equity dividido por Equity baseline.",
-                        "Melhor cenário entre os choques"
-                      )}
-                      {kpiBox(
-                        "Worst ΔEVE (% equity)",
-                        (() => {
-                          const worst = Math.min(
-                            ...results.map((r) => r.eve_pct_equity * 100)
-                          );
-                          return fmtSignedPct(worst, 1);
-                        })(),
-                        "Δ Economic Value of Equity dividido por Equity baseline.",
-                        "Pior cenário entre os choques"
-                      )}
-                    </div>
-
-                    {/* ΔEVE / Equity */}
-                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm text-white/80">ΔEVE / Equity vs shock</div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={() => exportChartPng("chart-eve", "eve_vs_shock.png")}
-                        >
-                          Export PNG
-                        </Button>
-                      </div>
-                      <div id="chart-eve">
-                        <ResponsiveContainer width="100%" height={260}>
-                          <AreaChart data={sortedResultsForCharts}>
-                            <CartesianGrid stroke="rgba(255,255,255,0.1)" />
-                            <XAxis dataKey="shock_bps" tick={{ fontSize: 12 }} tickMargin={8} />
-                            <YAxis
-                              tickFormatter={(v) => fmtPct((Number(v) || 0) * 100)}
-                              tick={{ fontSize: 12 }}
-                              tickMargin={8}
-                            />
-                            <RechartTooltip
-                              formatter={(val: any, name: any) => {
-                                if (name === "ΔEVE/Equity") {
-                                  const pct = (val as number) * 100;
-                                  return fmtSignedPct(pct, 1);
-                                }
-                                return val;
-                              }}
-                              labelFormatter={(l) => `Shock: ${l} bps`}
-                              cursor={{ stroke: "rgba(255,255,255,0.25)", strokeWidth: 1 }}
-                              contentStyle={{
-                                background: "rgba(10,10,10,0.8)",
-                                backdropFilter: "blur(10px)",
-                                border: "1px solid rgba(255,255,255,0.12)",
-                                borderRadius: 12,
-                                color: "#E5E7EB",
-                              }}
-                            />
-                            <Area
-                              type="monotone"
-                              dataKey="eve_pct_equity"
-                              name="ΔEVE/Equity"
-                              fill="rgba(147,197,253,0.20)"
-                              stroke="rgba(147,197,253,0.85)"
-                              strokeWidth={2}
-                              activeDot
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* ΔNII (12m) */}
-                    <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm text-white/80">ΔNII (12m) vs shock</div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={() => exportChartPng("chart-nii", "nii_vs_shock.png")}
-                        >
-                          Export PNG
-                        </Button>
-                      </div>
-                      <div id="chart-nii">
-                        <ResponsiveContainer width="100%" height={260}>
-                          <LineChart data={sortedResultsForCharts}>
-                            <CartesianGrid stroke="rgba(255,255,255,0.08)" />
-                            <XAxis dataKey="shock_bps" tick={{ fontSize: 12 }} tickMargin={8} />
-                            <YAxis tickFormatter={fmtMoney} tick={{ fontSize: 12 }} tickMargin={8} />
-                            <RechartTooltip
-                              formatter={(val: any, name: any) =>
-                                name === "ΔNII (12m)" ? fmtSignedMoney(Number(val)) : val
-                              }
-                              labelFormatter={(l) => `Shock: ${l} bps`}
-                              contentStyle={{
-                                background: "rgba(10,10,10,0.8)",
-                                backdropFilter: "blur(10px)",
-                                border: "1px solid rgba(255,255,255,0.12)",
-                                borderRadius: 12,
-                                color: "#E5E7EB",
-                              }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="nii_delta"
-                              name="ΔNII (12m)"
-                              stroke="rgba(110,231,183,0.9)"
-                              strokeWidth={2}
-                              dot={{ r: 2 }}
-                              activeDot
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* LCR */}
-                    <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm text-white/80">
-                          Liquidity: HQLA, Outflows & Coverage vs shock
+                    {loading ? (
+                      <>
+                        <div className="grid gap-4 sm:grid-cols-3">
+                          <Skeleton className="h-24" />
+                          <Skeleton className="h-24" />
+                          <Skeleton className="h-24" />
                         </div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={() => exportChartPng("chart-lcr", "lcr_vs_shock.png")}
-                        >
-                          Export PNG
-                        </Button>
-                      </div>
-                      <div id="chart-lcr">
-                        <ResponsiveContainer width="100%" height={300}>
-                          <BarChart
-                            data={sortedResultsForCharts}
-                            barCategoryGap={24}
-                            margin={{ top: 8, right: 28, left: 28, bottom: 8 }}
+                        <Skeleton className="h-72 w-full" />
+                        <Skeleton className="h-72 w-full" />
+                        <Skeleton className="h-80 w-full" />
+                      </>
+                    ) : (
+                      <>
+                        {/* KPIs */}
+                        <div className="grid gap-4 sm:grid-cols-3">
+                          {kpiBox(
+                            t("equity"),
+                            fmtMoney(equity),
+                            t("equityHint"),
+                            t("equitySub")
+                          )}
+                          {kpiBox(
+                            t("bestEve"),
+                            (() => {
+                              const best = Math.max(
+                                ...results.map((r) => r.eve_pct_equity * 100)
+                              );
+                              return fmtSignedPct(best, 1);
+                            })(),
+                            t("eveHint"),
+                            t("bestAmong")
+                          )}
+                          {kpiBox(
+                            t("worstEve"),
+                            (() => {
+                              const worst = Math.min(
+                                ...results.map((r) => r.eve_pct_equity * 100)
+                              );
+                              return fmtSignedPct(worst, 1);
+                            })(),
+                            t("eveHint"),
+                            t("worstAmong")
+                          )}
+                        </div>
+
+                        {/* ΔEVE / Equity */}
+                        <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                          <div className="mb-2 flex items-center justify-between">
+                            <div className="text-sm text-white/80">
+                              {t("eveVsShock")}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={() =>
+                                exportChartPng("chart-eve", "eve_vs_shock.png")
+                              }
+                              data-testid="export-eve-png"
+                            >
+                              {t("exportPng")}
+                            </Button>
+                          </div>
+                          <div id="chart-eve">
+                            <ResponsiveContainer width="100%" height={260}>
+                              <AreaChart data={sortedResultsForCharts}>
+                                <CartesianGrid stroke="rgba(255,255,255,0.18)" />
+                                <XAxis
+                                  dataKey="shock_bps"
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                />
+                                <YAxis
+                                  tickFormatter={(v) =>
+                                    fmtPct((Number(v) || 0) * 100)
+                                  }
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                />
+                                <RechartTooltip
+                                  formatter={(val: any, name: any) => {
+                                    if (name === "ΔEVE/Equity") {
+                                      const pct = (val as number) * 100;
+                                      return fmtSignedPct(pct, 1);
+                                    }
+                                    return val;
+                                  }}
+                                  labelFormatter={(l) => `Shock: ${l} bps`}
+                                  cursor={{
+                                    stroke: "rgba(255,255,255,0.35)",
+                                    strokeWidth: 1,
+                                  }}
+                                  contentStyle={{
+                                    background: "rgba(10,10,10,0.9)",
+                                    border: "1px solid rgba(255,255,255,0.25)",
+                                    borderRadius: 12,
+                                    color: "#F3F4F6",
+                                  }}
+                                />
+                                <Area
+                                  type="monotone"
+                                  dataKey="eve_pct_equity"
+                                  name="ΔEVE/Equity"
+                                  fill="rgba(96,165,250,0.35)"       // azul + contraste
+                                  stroke="#93C5FD"
+                                  strokeWidth={2.4}
+                                  isAnimationActive={!reducedMotion}
+                                  activeDot
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* ΔNII (12m) */}
+                        <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                          <div className="mb-2 flex items-center justify-between">
+                            <div className="text-sm text-white/80">
+                              {t("niiVsShock")}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={() =>
+                                exportChartPng("chart-nii", "nii_vs_shock.png")
+                              }
+                              data-testid="export-nii-png"
+                            >
+                              {t("exportPng")}
+                            </Button>
+                          </div>
+                          <div id="chart-nii">
+                            <ResponsiveContainer width="100%" height={260}>
+                              <LineChart data={sortedResultsForCharts}>
+                                <CartesianGrid stroke="rgba(255,255,255,0.16)" />
+                                <XAxis
+                                  dataKey="shock_bps"
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                />
+                                <YAxis
+                                  tickFormatter={fmtMoney}
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                />
+                                <RechartTooltip
+                                  formatter={(val: any, name: any) =>
+                                    name === "ΔNII (12m)"
+                                      ? fmtSignedMoney(Number(val))
+                                      : val
+                                  }
+                                  labelFormatter={(l) => `Shock: ${l} bps`}
+                                  contentStyle={{
+                                    background: "rgba(10,10,10,0.9)",
+                                    border: "1px solid rgba(255,255,255,0.25)",
+                                    borderRadius: 12,
+                                    color: "#F3F4F6",
+                                  }}
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="nii_delta"
+                                  name="ΔNII (12m)"
+                                  stroke="#34D399" // emerald 400 (contraste)
+                                  strokeWidth={2.4}
+                                  dot={{ r: 2 }}
+                                  isAnimationActive={!reducedMotion}
+                                  activeDot
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* LCR */}
+                        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                          <div className="mb-2 flex items-center justify-between">
+                            <div className="text-sm text-white/80">
+                              {t("lcrTitle")}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={() =>
+                                exportChartPng("chart-lcr", "lcr_vs_shock.png")
+                              }
+                              data-testid="export-lcr-png"
+                            >
+                              {t("exportPng")}
+                            </Button>
+                          </div>
+                          <div id="chart-lcr">
+                            <ResponsiveContainer width="100%" height={300}>
+                              <BarChart
+                                data={sortedResultsForCharts}
+                                barCategoryGap={24}
+                                margin={{ top: 8, right: 28, left: 28, bottom: 8 }}
+                              >
+                                <CartesianGrid stroke="rgba(255,255,255,0.16)" />
+                                <XAxis
+                                  dataKey="shock_bps"
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                />
+                                <YAxis
+                                  yAxisId="left"
+                                  width={88}
+                                  tickFormatter={fmtMoney}
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                />
+                                <YAxis
+                                  yAxisId="right"
+                                  width={56}
+                                  orientation="right"
+                                  tickFormatter={(v) => fmtX(Number(v))}
+                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                  stroke="#6B7280"
+                                  tickMargin={8}
+                                  domain={[0, (dataMax: number) => Math.max(1.2, dataMax * 1.1)]}
+                                />
+                                <RechartTooltip
+                                  cursor={false}
+                                  contentStyle={{
+                                    background: "rgba(10,10,10,0.9)",
+                                    border: "1px solid rgba(255,255,255,0.25)",
+                                    borderRadius: 12,
+                                    color: "#F3F4F6",
+                                  }}
+                                  formatter={(val: any, _name: any, props: any) => {
+                                    const key = (props?.dataKey as string) || "";
+                                    if (key === "lcr_hqla" || key === "lcr_outflows") {
+                                      return fmtSignedMoney(Number(val));
+                                    }
+                                    if (key === "lcr_coverage") return signed(fmtX(Number(val)));
+                                    return val;
+                                  }}
+                                  labelFormatter={(l) => `Shock: ${l} bps`}
+                                />
+                                <Legend wrapperStyle={{ color: "#E5E7EB" }} />
+
+                                <Bar
+                                  yAxisId="left"
+                                  dataKey="lcr_hqla"
+                                  name="HQLA"
+                                  fill="rgba(52,211,153,0.55)"
+                                  stroke="#10B981"
+                                  barSize={18}
+                                  radius={[6, 6, 0, 0]}
+                                  isAnimationActive={!reducedMotion}
+                                />
+                                <Bar
+                                  yAxisId="left"
+                                  dataKey="lcr_outflows"
+                                  name="Outflows"
+                                  fill="rgba(248,113,113,0.55)"
+                                  stroke="#EF4444"
+                                  barSize={18}
+                                  radius={[6, 6, 0, 0]}
+                                  isAnimationActive={!reducedMotion}
+                                />
+
+                                <Line
+                                  yAxisId="right"
+                                  type="monotone"
+                                  dataKey="lcr_coverage"
+                                  name="Coverage (×)"
+                                  stroke="#93C5FD"
+                                  strokeWidth={2.4}
+                                  dot={{ r: 2 }}
+                                  isAnimationActive={!reducedMotion}
+                                  activeDot
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Tabela */}
+                        <div className="overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
+                          <table className="min-w-full text-sm">
+                            <thead className="sticky top-0 bg-white/5 backdrop-blur z-10">
+                              <tr>
+                                <SortHeader col="shock_bps" label={t("tableShock")} />
+                                <SortHeader col="eve_change" label={t("tableEve")} />
+                                <SortHeader col="eve_pct_equity" label={t("tableEveEq")} />
+                                <SortHeader col="nii_delta" label={t("tableNii")} />
+                                <SortHeader col="lcr_hqla" label={t("tableHqla")} />
+                                <SortHeader col="lcr_outflows" label={t("tableOut")} />
+                                <SortHeader col="lcr_coverage" label={t("tableCov")} />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tableSortedResults.map((r) => (
+                                <tr key={r.shock_bps} className="even:bg-white/[0.03]">
+                                  <td className="px-3 py-2 border-b border-white/10">{r.shock_bps}</td>
+                                  <td
+                                    className={`px-3 py-2 border-b border-white/10 ${
+                                      r.eve_change >= 0 ? "text-emerald-300" : "text-rose-300"
+                                    }`}
+                                  >
+                                    {fmtSignedMoney(r.eve_change)}
+                                  </td>
+                                  <td
+                                    className={`px-3 py-2 border-b border-white/10 ${
+                                      r.eve_pct_equity >= 0 ? "text-emerald-300" : "text-rose-300"
+                                    }`}
+                                  >
+                                    {fmtSignedPct(r.eve_pct_equity * 100)}
+                                  </td>
+                                  <td
+                                    className={`px-3 py-2 border-b border-white/10 ${
+                                      r.nii_delta >= 0 ? "text-emerald-300" : "text-rose-300"
+                                    }`}
+                                  >
+                                    {fmtSignedMoney(r.nii_delta)}
+                                  </td>
+                                  <td className="px-3 py-2 border-b border-white/10">
+                                    {fmtSignedMoney(r.lcr_hqla)}
+                                  </td>
+                                  <td className="px-3 py-2 border-b border-white/10">
+                                    {fmtSignedMoney(r.lcr_outflows)}
+                                  </td>
+                                  <td
+                                    className={`px-3 py-2 border-b border-white/10 ${
+                                      r.lcr_coverage >= 1 ? "text-emerald-300" : "text-rose-300"
+                                    }`}
+                                  >
+                                    {signed(fmtX(r.lcr_coverage))}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Export buttons */}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Button
+                            variant="secondary"
+                            className="bg-white/10 hover:bg-white/15 border border-white/10"
+                            onClick={exportResultsCsv}
+                            disabled={results.length === 0}
+                            data-testid="export-csv-btn-bottom"
                           >
-                            <CartesianGrid stroke="rgba(255,255,255,0.08)" />
-                            <XAxis
-                              dataKey="shock_bps"
-                              tick={{ fontSize: 12, fill: "#D1D5DB" }}
-                              stroke="#4B5563"
-                              tickMargin={8}
-                            />
-                            <YAxis
-                              yAxisId="left"
-                              width={88}
-                              tickFormatter={fmtMoney}
-                              tick={{ fontSize: 12, fill: "#D1D5DB" }}
-                              stroke="#4B5563"
-                              tickMargin={8}
-                            />
-                            <YAxis
-                              yAxisId="right"
-                              width={56}
-                              orientation="right"
-                              tickFormatter={(v) => fmtX(Number(v))}
-                              tick={{ fontSize: 12, fill: "#D1D5DB" }}
-                              stroke="#4B5563"
-                              tickMargin={8}
-                              domain={[0, (dataMax: number) => Math.max(1.2, dataMax * 1.1)]}
-                            />
-                            <RechartTooltip
-                              cursor={false}
-                              contentStyle={{
-                                background: "rgba(10,10,10,0.75)",
-                                backdropFilter: "blur(6px)",
-                                border: "1px solid rgba(255,255,255,0.08)",
-                                borderRadius: 12,
-                                color: "#E5E7EB",
-                              }}
-                              formatter={(val: any, _name: any, props: any) => {
-                                const key = (props?.dataKey as string) || "";
-                                if (key === "lcr_hqla" || key === "lcr_outflows") {
-                                  return fmtSignedMoney(Number(val));
-                                }
-                                if (key === "lcr_coverage") return signed(fmtX(Number(val)));
-                                return val;
-                              }}
-                              labelFormatter={(l) => `Shock: ${l} bps`}
-                            />
-                            <Legend wrapperStyle={{ color: "#E5E7EB" }} />
-
-                            <Bar
-                              yAxisId="left"
-                              dataKey="lcr_hqla"
-                              name="HQLA"
-                              fill="rgba(110,231,183,0.45)"
-                              stroke="rgba(16,185,129,0.9)"
-                              barSize={18}
-                              radius={[6, 6, 0, 0]}
-                            />
-                            <Bar
-                              yAxisId="left"
-                              dataKey="lcr_outflows"
-                              name="Outflows"
-                              fill="rgba(252,165,165,0.45)"
-                              stroke="rgba(239,68,68,0.9)"
-                              barSize={18}
-                              radius={[6, 6, 0, 0]}
-                            />
-
-                            <Line
-                              yAxisId="right"
-                              type="monotone"
-                              dataKey="lcr_coverage"
-                              name="Coverage (×)"
-                              stroke="rgba(147,197,253,0.9)"
-                              strokeWidth={2}
-                              dot={{ r: 2 }}
-                              activeDot
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* Tabela */}
-                    <div className="overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
-                      <table className="min-w-full text-sm">
-                        <thead className="sticky top-0 bg-white/5 backdrop-blur z-10">
-                          <tr>
-                            <SortHeader col="shock_bps" label="shock_bps" />
-                            <SortHeader col="eve_change" label="ΔEVE" />
-                            <SortHeader col="eve_pct_equity" label="ΔEVE / Equity" />
-                            <SortHeader col="nii_delta" label="ΔNII (12m)" />
-                            <SortHeader col="lcr_hqla" label="HQLA" />
-                            <SortHeader col="lcr_outflows" label="Outflows" />
-                            <SortHeader col="lcr_coverage" label="Coverage" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tableSortedResults.map((r) => (
-                            <tr key={r.shock_bps} className="even:bg-white/[0.03]">
-                              <td className="px-3 py-2 border-b border-white/10">{r.shock_bps}</td>
-                              <td
-                                className={`px-3 py-2 border-b border-white/10 ${
-                                  r.eve_change >= 0 ? "text-emerald-300" : "text-rose-300"
-                                }`}
-                              >
-                                {fmtSignedMoney(r.eve_change)}
-                              </td>
-                              <td
-                                className={`px-3 py-2 border-b border-white/10 ${
-                                  r.eve_pct_equity >= 0 ? "text-emerald-300" : "text-rose-300"
-                                }`}
-                              >
-                                {fmtSignedPct(r.eve_pct_equity * 100)}
-                              </td>
-                              <td
-                                className={`px-3 py-2 border-b border-white/10 ${
-                                  r.nii_delta >= 0 ? "text-emerald-300" : "text-rose-300"
-                                }`}
-                              >
-                                {fmtSignedMoney(r.nii_delta)}
-                              </td>
-                              <td className="px-3 py-2 border-b border-white/10">
-                                {fmtSignedMoney(r.lcr_hqla)}
-                              </td>
-                              <td className="px-3 py-2 border-b border-white/10">
-                                {fmtSignedMoney(r.lcr_outflows)}
-                              </td>
-                              <td
-                                className={`px-3 py-2 border-b border-white/10 ${
-                                  r.lcr_coverage >= 1 ? "text-emerald-300" : "text-rose-300"
-                                }`}
-                              >
-                                {signed(fmtX(r.lcr_coverage))}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Export buttons */}
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <Button
-                        variant="secondary"
-                        className="bg-white/10 hover:bg-white/15 border border-white/10"
-                        onClick={exportResultsCsv}
-                        disabled={results.length === 0}
-                      >
-                        Export CSV
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="bg-white/10 hover:bg-white/15 border border-white/10"
-                        onClick={exportResultsJson}
-                        disabled={results.length === 0}
-                      >
-                        Export JSON
-                      </Button>
-                    </div>
+                            {t("exportCsv")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="bg-white/10 hover:bg-white/15 border border-white/10"
+                            onClick={exportResultsJson}
+                            disabled={results.length === 0}
+                            data-testid="export-json-btn-bottom"
+                          >
+                            {t("exportJson")}
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -1703,8 +2213,11 @@ export default function App() {
               }}
             >
               <div className="flex items-center justify-between mb-3">
-                <h3 id="schema-title" className="text-[20px] leading-[24px] font-medium">
-                  Expected schema
+                <h3
+                  id="schema-title"
+                  className="text-[20px] leading-[24px] font-medium"
+                >
+                  {t("expectedSchema")}
                 </h3>
                 <button
                   onClick={() => {
@@ -1712,22 +2225,22 @@ export default function App() {
                     schemaBtnRef.current?.focus();
                   }}
                   className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm hover:bg-white/10"
-                  aria-label="Close dialog"
+                  aria-label={t("close")}
                 >
-                  Close
+                  {t("close")}
                 </button>
               </div>
               <div className="space-y-4 text-sm">
                 <div>
-                  <div className="text-white/70 mb-1">Required</div>
+                  <div className="text-white/80 mb-1">{t("required")}</div>
                   <div className="flex flex-wrap gap-2">
                     {REQUIRED_COLS.map((c) => (
                       <span
                         key={c}
                         className={`rounded-full border px-2 py-1 text-[11px] ${
                           headers.includes(c) || mappedHeaders.includes(c)
-                            ? "bg-emerald-500/20 text-emerald-200 border-emerald-700"
-                            : "bg-red-500/20 text-red-200 border-red-700"
+                            ? "bg-emerald-500/25 text-emerald-200 border-emerald-600"
+                            : "bg-red-500/25 text-red-200 border-red-600"
                         }`}
                       >
                         {c}
@@ -1736,7 +2249,7 @@ export default function App() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-white/70 mb-1">Optional</div>
+                  <div className="text-white/80 mb-1">{t("optional")}</div>
                   <div className="flex flex-wrap gap-2">
                     {OPTIONAL_COLS.map((c) => (
                       <span
@@ -1744,7 +2257,7 @@ export default function App() {
                         className={`rounded-full border px-2 py-1 text-[11px] ${
                           headers.includes(c) || mappedHeaders.includes(c)
                             ? "bg-white/10 text-white/90 border-white/20"
-                            : "bg-black/20 text-white/50 border-white/10"
+                            : "bg-black/20 text-white/60 border-white/10"
                         }`}
                       >
                         {c}
@@ -1752,9 +2265,8 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-                <div className="text-xs text-white/60">
-                  Tip: usa o botão <span className="text-white">Sample CSV</span> para um ficheiro de
-                  exemplo.
+                <div className="text-xs text-white/70">
+                  Tip: {t("sampleCsv")}
                 </div>
               </div>
             </SchemaModalContent>
@@ -1785,8 +2297,14 @@ export default function App() {
               }}
             >
               <div className="mb-3 gap-2 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                <h3 id="preview-title" className="text-[20px] leading-[24px] font-medium">
-                  CSV Preview ({previewRowsFiltered.length}/{rows.length})
+                <h3
+                  id="preview-title"
+                  className="text-[20px] leading-[24px] font-medium"
+                >
+                  {t("previewDialog", {
+                    f: previewRowsFiltered.length,
+                    t: rows.length,
+                  })}
                 </h3>
 
                 {/* Toolbar */}
@@ -1794,11 +2312,12 @@ export default function App() {
                   <input
                     id="preview-search"
                     type="text"
-                    placeholder="Search..."
+                    placeholder={t("search")}
                     value={previewQuery}
                     onChange={(e) => setPreviewQuery(e.target.value)}
                     className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm placeholder-white/50 focus:outline-none focus:border-white/20"
-                    aria-label="Search in CSV preview"
+                    aria-label={t("search")}
+                    data-testid="preview-search"
                   />
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -1806,17 +2325,19 @@ export default function App() {
                       checked={compactRows}
                       onChange={(e) => setCompactRows(e.target.checked)}
                       className={CHECKBOX}
-                      aria-label="Compact rows"
+                      aria-label={t("compact")}
+                      data-testid="compact-checkbox"
                     />
-                    Compact
+                    {t("compact")}
                   </label>
                   <label className="flex items-center gap-2 text-sm">
-                    Page size
+                    {t("pageSize")}
                     <select
                       value={pageSize}
                       onChange={(e) => setPageSize(Number(e.target.value))}
                       className="h-9 rounded-lg border border-white/10 bg-white/5 px-2 text-sm focus:outline-none"
-                      aria-label="Page size"
+                      aria-label={t("pageSize")}
+                      data-testid="page-size-select"
                     >
                       {[100, 200, 500, 1000].map((n) => (
                         <option key={n} value={n}>
@@ -1829,228 +2350,324 @@ export default function App() {
                     variant="secondary"
                     onClick={copyPreviewCsv}
                     className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
+                    data-testid="copy-page-btn"
                   >
-                    Copy (page)
+                    {t("copyPage")}
                   </Button>
                   <Button
                     variant="secondary"
                     onClick={downloadPreviewCsv}
                     className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
+                    data-testid="download-filtered-btn"
                   >
-                    Download (filtered)
+                    {t("downloadFiltered")}
                   </Button>
                   <Button
                     onClick={() => {
                       setPreviewOpen(false);
                       previewBtnRef.current?.focus();
                     }}
-                    aria-label="Close dialog"
+                    aria-label={t("close")}
+                    data-testid="close-preview-btn"
                   >
-                    Close
+                    {t("close")}
                   </Button>
                 </div>
               </div>
 
               {/* Pagination */}
-              <div className="flex flex-wrap items-center justify-between mb-2 text-xs text-white/70 gap-2">
+              <div className="flex flex-wrap items-center justify-between mb-2 text-xs text-white/80 gap-2">
                 <div>
-                  Page {page} / {totalPages} — showing {pageSlice.length} of {previewRowsFiltered.length} filtered rows
+                  {t("pageOf", {
+                    p: page,
+                    tp: totalPages,
+                    n: pageSlice.length,
+                    nf: previewRowsFiltered.length,
+                  })}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="secondary"
                     className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                    onClick={() => setPage(1)}
+                    disabled={page === 1}
+                    title={t("first")}
+                    data-testid="first-page-btn"
+                  >
+                    {t("first")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
+                    title={t("prev")}
+                    data-testid="prev-page-btn"
                   >
-                    Prev
+                    {t("prev")}
                   </Button>
+                  <div
+                    className="text-xs text-white/80"
+                    data-testid="page-indicator"
+                    aria-live="polite"
+                  >
+                    {page} / {totalPages}
+                  </div>
                   <Button
                     variant="secondary"
                     className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
+                    title={t("next")}
+                    data-testid="next-page-btn"
                   >
-                    Next
+                    {t("next")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page === totalPages}
+                    title={t("last")}
+                    data-testid="last-page-btn"
+                  >
+                    {t("last")}
                   </Button>
                   <label className="flex items-center gap-1">
-                    Go to
+                    {t("goto")}
                     <input
+                      id="goto-input"
                       type="number"
                       min={1}
                       max={totalPages}
                       className="h-8 w-20 rounded-md border border-white/10 bg-white/5 px-2 text-xs"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          const v = Number((e.target as HTMLInputElement).value);
-                          if (!Number.isNaN(v))
-                            setPage(Math.min(Math.max(1, v), totalPages));
-                        }
-                      }}
-                      aria-label="Go to page"
+                      aria-label={t("gotoPage")}
+                      data-testid="goto-input"
                     />
                   </label>
+                  <Button
+                    variant="secondary"
+                    className="h-8 bg-white/10 hover:bg-white/15 border border-white/10"
+                    onClick={() => {
+                      const el = document.getElementById(
+                        "goto-input"
+                      ) as HTMLInputElement | null;
+                      const v = Number(el?.value || "");
+                      if (!Number.isNaN(v))
+                        setPage(Math.min(Math.max(1, v), totalPages));
+                    }}
+                    data-testid="goto-btn"
+                  >
+                    {t("goto")}
+                  </Button>
                 </div>
               </div>
 
-              <div className="max-h-[60vh] overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
-                <table className="min-w-full text-sm">
-                  <thead className="sticky top-0 bg-white/5 backdrop-blur">
-                    <tr>
-                      {(headers.length ? headers : Object.keys(pageSlice[0] || {})).map(
-                        (h) => (
-                          <th key={h} className="text-left px-3 py-2 border-b border-white/10">
-                            {h}
-                          </th>
-                        )
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageSlice.map((r, i) => (
-                      <tr key={i} className={`even:bg-white/[0.03] ${compactRows ? "" : ""}`}>
-                        {(headers.length ? headers : Object.keys(r)).map((h) => (
-                          <td
-                            key={h}
-                            className={`px-3 ${compactRows ? "py-1.5" : "py-2"} border-b border-white/10`}
-                          >
-                            {String((r as any)[h] ?? "")}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {/* Virtualized table */}
+              <VirtualizedPreviewTable
+                headers={headers.length ? headers : Object.keys(pageSlice[0] || {})}
+                rows={pageSlice}
+                query={debouncedQuery}
+                compact={compactRows}
+                parsing={parsing}
+              />
 
-              {/* Pagination bottom */}
-              <div className="flex items-center justify-end mt-2 gap-2">
-                <Button
-                  variant="secondary"
-                  className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                  onClick={() => setPage(1)}
-                  disabled={page === 1}
-                >
-                  First
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  Prev
-                </Button>
-                <div className="text-xs text-white/70">
-                  Page {page} / {totalPages}
+              {/* Estado “sem resultados” */}
+              {debouncedQuery && previewRowsFiltered.length === 0 && !parsing && (
+                <div className="mt-3 text-center text-sm text-white/80" data-testid="no-results">
+                  {t("noResults", { q: previewQuery })}
                 </div>
-                <Button
-                  variant="secondary"
-                  className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                >
-                  Next
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                  onClick={() => setPage(totalPages)}
-                  disabled={page === totalPages}
-                >
-                  Last
-                </Button>
-              </div>
+              )}
             </SchemaModalContent>
           </div>
         )}
       </div>
-      </UiTooltipProvider>
-    );
-  }
+    </UiTooltipProvider>
+  );
+}
 
-  /* ==================== Background ==================== */
-  function BackgroundGlow() {
-    return (
-      <>
-        <div className="fixed inset-0 -z-50 bg-neutral-950" />
-        <div
-          className="pointer-events-none fixed inset-0 -z-40"
-          style={{
-            background: `
-              radial-gradient(1200px 800px at 50% 15%, rgba(59,130,246,0.12), transparent 70%),
-              radial-gradient(1000px 700px at 25% 75%, rgba(96,165,250,0.10), transparent 75%),
-              radial-gradient(900px 600px at 75% 70%, rgba(37,99,235,0.09), transparent 75%),
-              radial-gradient(800px 500px at 15% 40%, rgba(147,197,253,0.08), transparent 70%),
-              radial-gradient(700px 500px at 85% 30%, rgba(29,78,216,0.07), transparent 70%)
-            `,
-          }}
-        />
-      </>
-    );
-  }
+/* ==================== Background ==================== */
+function BackgroundGlow() {
+  return (
+    <>
+      <div className="fixed inset-0 -z-50 bg-neutral-950" />
+      <div
+        className="pointer-events-none fixed inset-0 -z-40"
+        style={{
+          background: `
+            radial-gradient(1200px 800px at 50% 15%, rgba(59,130,246,0.12), transparent 70%),
+            radial-gradient(1000px 700px at 25% 75%, rgba(96,165,250,0.10), transparent 75%),
+            radial-gradient(900px 600px at 75% 70%, rgba(37,99,235,0.09), transparent 75%),
+            radial-gradient(800px 500px at 15% 40%, rgba(147,197,253,0.08), transparent 70%),
+            radial-gradient(700px 500px at 85% 30%, rgba(29,78,216,0.07), transparent 70%)
+          `,
+        }}
+      />
+    </>
+  );
+}
 
-  /* ---------- Modal content helper ---------- */
-  function SchemaModalContent({
-    panelClass,
-    onClose,
-    children,
-  }: {
-    panelClass: string;
-    onClose: () => void;
-    children: React.ReactNode;
-  }) {
-    const containerRef = useRef<HTMLDivElement | null>(null);
+/* ---------- Modal content helper ---------- */
+function SchemaModalContent({
+  panelClass,
+  onClose,
+  children,
+}: {
+  panelClass: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-    useEffect(() => {
-      const root = containerRef.current!;
-      const getFocusables = () =>
-        root.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  useEffect(() => {
+    const root = containerRef.current!;
+    const getFocusables = () =>
+      root.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+    const focusables = getFocusables();
+    (focusables[0] ?? root).focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+      if (e.key === "Tab") {
+        const list = Array.from(getFocusables()).filter(
+          (el) => !el.hasAttribute("disabled")
         );
-      const focusables = getFocusables();
-      (focusables[0] ?? root).focus();
+        if (!list.length) return;
+        const first = list[0];
+        const last = list[list.length - 1];
+        const active = document.activeElement as HTMLElement | null;
 
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          onClose();
-        }
-        if (e.key === "Tab") {
-          const list = Array.from(getFocusables()).filter(
-            (el) => !el.hasAttribute("disabled")
-          );
-          if (!list.length) return;
-          const first = list[0];
-          const last = list[list.length - 1];
-          const active = document.activeElement as HTMLElement | null;
-
-          if (e.shiftKey) {
-            if (active === first || !root.contains(active)) {
-              e.preventDefault();
-              last.focus();
-            }
-          } else {
-            if (active === last || !root.contains(active)) {
-              e.preventDefault();
-              first.focus();
-            }
+        if (e.shiftKey) {
+          if (active === first || !root.contains(active)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (active === last || !root.contains(active)) {
+            e.preventDefault();
+            first.focus();
           }
         }
-      };
+      }
+    };
 
-      document.addEventListener("keydown", onKey);
-      return () => document.removeEventListener("keydown", onKey);
-    }, [onClose]);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-    return (
-      <div
-        ref={containerRef}
-        className={`relative z-10 w-[min(960px,92vw)] ${panelClass} p-4 outline-none`}
-        tabIndex={-1}
-        role="document"
-      >
-        {children}
-      </div>
+  return (
+    <div
+      ref={containerRef}
+      className={`relative z-10 w-[min(960px,92vw)] ${panelClass} p-4 outline-none`}
+      tabIndex={-1}
+      role="document"
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ==================== Virtualized Preview Table ==================== */
+function VirtualizedPreviewTable({
+  headers,
+  rows,
+  query,
+  compact,
+  parsing,
+}: {
+  headers: string[];
+  rows: Row[];
+  query: string;
+  compact: boolean;
+  parsing: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+
+  const ROW_H = compact ? 28 : 36; // altura aproximada por linha
+  const OVERSCAN = 10;
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    const onResize = () => setViewportH(el.clientHeight);
+    onResize();
+    el.addEventListener("scroll", onScroll);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, []);
+
+  const total = rows.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const visibleCount = Math.ceil((viewportH || 1) / ROW_H) + OVERSCAN * 2;
+  const endIndex = Math.min(total, startIndex + visibleCount);
+  const slice = rows.slice(startIndex, endIndex);
+  const topPad = startIndex * ROW_H;
+  const bottomPad = (total - endIndex) * ROW_H;
+
+  return (
+    <div
+      className="max-h-[60vh] overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur"
+      ref={containerRef}
+      data-testid="virtual-table"
+    >
+      <table className="min-w-full text-sm">
+        <thead className="sticky top-0 bg-white/5 backdrop-blur z-10">
+          <tr>
+            {headers.map((h) => (
+              <th key={h} className="text-left px-3 py-2 border-b border-white/10">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      </table>
+
+      {/* Skeleton enquanto a viewport mede / parsing */}
+      {parsing && (
+        <div className="p-3 space-y-2">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="h-6 rounded bg-white/10" />
+          ))}
+        </div>
+      )}
+
+      {!parsing && <div style={{ height: topPad }} aria-hidden />}
+
+      {!parsing && (
+        <table className="min-w-full text-sm">
+          <tbody>
+            {slice.map((r, i) => (
+              <tr key={startIndex + i} className={`even:bg-white/[0.03]`}>
+                {headers.map((h) => (
+                  <td
+                    key={h}
+                    className={`px-3 ${compact ? "py-1.5" : "py-2"} border-b border-white/10`}
+                    style={{ height: ROW_H }}
+                  >
+                    {query
+                      ? highlightMatch(String((r as any)[h] ?? ""), query)
+                      : String((r as any)[h] ?? "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {!parsing && <div style={{ height: bottomPad }} aria-hidden />}
+    </div>
   );
 }
