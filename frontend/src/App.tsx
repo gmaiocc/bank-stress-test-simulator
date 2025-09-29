@@ -1,6 +1,8 @@
+// src/App.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import { z } from "zod";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,19 +28,40 @@ import {
   TooltipContent as UiTooltipContent,
 } from "@/components/ui/tooltip";
 
-/* ==================== i18n ==================== */
+import {
+  Upload,
+  Eye,
+  FileSpreadsheet,
+  Play,
+  Loader2,
+  Download,
+  FileJson,
+  AlertTriangle,
+  Search,
+  X as XIcon,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Languages,
+  FileDown,
+  ImageDown,
+} from "lucide-react";
+
+import { AnimatedPageWrapper } from "./routes/AnimatedPageWrapper";
+import { Link } from "react-router-dom";
+
 type Lang = "pt" | "en";
-const LANG_LS_KEY = "bsts_lang_v07";
+const LANG_LS_KEY = "bsts_lang_v1.0.0";
 
 const DIC: Record<Lang, Record<string, string>> = {
   en: {
     appTitle: "Bank Stress Test Simulator",
-    version: "v0.7.0",
+    version: "v1.0.0",
     dataParams: "Data & Parameters",
     csvFile: "CSV file",
     dropHere: "Drag here or choose a file (max {{mb}}MB)",
     chooseFile: "Choose File",
-    sampleCsv: "Sample CSV",
     delimiter: "Delimiter",
     headerRow: "First row contains headers",
     autoDetect: "Auto (detect)",
@@ -57,7 +80,6 @@ const DIC: Record<Lang, Record<string, string>> = {
     running: "Running...",
     exportCsv: "Export CSV",
     exportJson: "Export JSON",
-    tipSample: "Tip: you can download a sample CSV and edit it.",
     parseErr: "Error reading CSV.",
     csvLoaded: "CSV loaded successfully.",
     copyOk: "Preview copied to clipboard.",
@@ -70,7 +92,6 @@ const DIC: Record<Lang, Record<string, string>> = {
     emptyTitle: "Start by uploading a CSV",
     emptySub:
       "Drag the file to the box on the left, confirm the delimiter, review validation and run the stress test.",
-    downloadSample: "Download sample",
     chooseFileCta: "Choose file",
     schema: "Schema",
     required: "Required",
@@ -121,15 +142,16 @@ const DIC: Record<Lang, Record<string, string>> = {
     noResults:
       "No results for \"{{q}}\". Check the term or clear the filter.",
     lang: "Language",
+    sampleCsv: "You can download a sample CSV on the Try it page.",
+    ok: "OK",
   },
   pt: {
     appTitle: "Bank Stress Test Simulator",
-    version: "v0.7.0",
+    version: "v1.0.0",
     dataParams: "Dados & Parâmetros",
     csvFile: "Ficheiro CSV",
     dropHere: "Arrasta aqui ou escolhe um ficheiro (máx {{mb}}MB)",
     chooseFile: "Escolher ficheiro",
-    sampleCsv: "Sample CSV",
     delimiter: "Delimitador",
     headerRow: "Primeira linha tem cabeçalhos",
     autoDetect: "Auto (detectar)",
@@ -148,8 +170,6 @@ const DIC: Record<Lang, Record<string, string>> = {
     running: "A correr...",
     exportCsv: "Exportar CSV",
     exportJson: "Exportar JSON",
-    tipSample:
-      "Dica: podes descarregar um sample CSV e editar.",
     parseErr: "Erro ao ler o CSV.",
     csvLoaded: "CSV carregado com sucesso.",
     copyOk: "Preview copiada para o clipboard.",
@@ -162,7 +182,6 @@ const DIC: Record<Lang, Record<string, string>> = {
     emptyTitle: "Começa por carregar um CSV",
     emptySub:
       "Arrasta o ficheiro para a caixa ao lado, confirma o delimitador, revê a validação e corre o stress test.",
-    downloadSample: "Descarregar sample",
     chooseFileCta: "Escolher ficheiro",
     schema: "Schema",
     required: "Obrigatórias",
@@ -215,17 +234,17 @@ const DIC: Record<Lang, Record<string, string>> = {
     noResults:
       "Sem resultados para \"{{q}}\". Verifica o termo ou limpa o filtro.",
     lang: "Idioma",
+    sampleCsv: "Podes descarregar um CSV de exemplo na página Try it.",
+    ok: "OK",
   },
 };
 
 function useI18n() {
   const [lang, setLang] = useState<Lang>("en");
   useEffect(() => {
-    // 1ª vez: preferir locale do browser
     const saved = localStorage.getItem(LANG_LS_KEY) as Lang | null;
-    if (saved === "pt" || saved === "en") {
-      setLang(saved);
-    } else {
+    if (saved === "pt" || saved === "en") setLang(saved);
+    else {
       const n = navigator.language || navigator.languages?.[0] || "en";
       const guess: Lang = n.toLowerCase().startsWith("pt") ? "pt" : "en";
       setLang(guess);
@@ -247,10 +266,33 @@ function useI18n() {
   return { lang, setLang: set, t };
 }
 
-/* ==================== Utils & formatters ==================== */
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const nf2 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const fmtMoney = (n: number) => nf0.format(Number(n) || 0);
+const fmtMoneyCompact = (n: number) => {
+  const abs = Math.abs(n);
+  const units = [
+    { v: 1e12, s: "T" },
+    { v: 1e9, s: "B" },
+    { v: 1e6, s: "M" },
+    { v: 1e3, s: "K" },
+  ] as const;
+
+  for (const u of units) {
+    if (abs >= u.v) {
+      const num = n / u.v;
+      return num.toLocaleString("en-US", {
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 3,
+      }) + u.s;
+    }
+  }
+
+  return Number(n || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  });
+};
+
 const fmtPct = (x: number, digits = 1) =>
   `${(Number.isFinite(x) ? x : 0).toFixed(digits)}%`;
 const fmtX = (x: number, digits = 2) =>
@@ -265,7 +307,6 @@ const fmtSignedPct = (p: number, digits = 1) =>
 const LS_KEY = "bsts_v060_params";
 const MAX_FILE_MB = 10;
 
-/* ---- motion (prefers-reduced-motion) ---- */
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -278,7 +319,6 @@ function useReducedMotion() {
   return reduced;
 }
 
-/* ---- estilos ---- */
 const PANEL =
   "rounded-2xl border border-white/5 bg-white/3 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
 const FIELD_BASE =
@@ -289,12 +329,11 @@ const SELECT_FIELD = `${FIELD_BASE} pr-9 appearance-none cursor-pointer`;
 const CHECKBOX =
   "h-4 w-4 rounded border border-white/20 bg-white/10 accent-white/90 focus:outline-none focus:ring-2 focus:ring-white/20";
 
-/* ==================== Tipagem ==================== */
 type Row = Record<string, string | number | null>;
 type ScenarioOut = {
   shock_bps: number;
   eve_change: number;
-  eve_pct_equity: number; // decimal
+  eve_pct_equity: number;
   nii_delta: number;
   lcr_hqla: number;
   lcr_outflows: number;
@@ -312,11 +351,11 @@ const REQUIRED_COLS = [
   "float_share",
   "repricing_bucket",
 ] as const;
+
 const OPTIONAL_COLS = ["deposit_beta", "stability", "convexity"] as const;
 type RequiredCol = (typeof REQUIRED_COLS)[number];
 type OptionalCol = (typeof OPTIONAL_COLS)[number];
 
-/* ==================== Mapeamento & Validação (zod) ==================== */
 const normalize = (s: string) =>
   s
     .toLowerCase()
@@ -363,13 +402,11 @@ type ValidRow = z.infer<typeof requiredSchema> & z.infer<typeof optionalSchema>;
 function buildHeaderMap(headers: string[]) {
   const map: Record<string, string> = {};
   const normHeaders = headers.map((h) => [h, normalize(h)] as const);
-
   const tryFind = (expected: string, alts: string[]) => {
     const candidates = [expected, ...alts].map(normalize);
     const found = normHeaders.find(([, n]) => candidates.includes(n));
     return found?.[0];
   };
-
   [...REQUIRED_COLS, ...OPTIONAL_COLS].forEach((col) => {
     const orig = tryFind(col, SYNONYMS[col]);
     if (orig) map[orig] = col;
@@ -389,15 +426,12 @@ function remapRow(row: Row, headerMap: Record<string, string>) {
 function validateRows(rows: Row[], headers: string[]) {
   const headerMap = buildHeaderMap(headers);
   const remapped = rows.map((r) => remapRow(r, headerMap)) as Row[];
-
   const mappedHeaders = Array.from(
     new Set(remapped.flatMap((r) => Object.keys(r)))
   );
   const missing = REQUIRED_COLS.filter((c) => !mappedHeaders.includes(c));
-
   const errors: string[] = [];
   const valid: ValidRow[] = [];
-
   if (missing.length)
     errors.push(
       `Row 0: schema: Missing required columns: ${missing.join(", ")}`
@@ -446,15 +480,12 @@ function validateRows(rows: Row[], headers: string[]) {
   return { validRows: valid, errors, headerMap, mappedHeaders };
 }
 
-/* ==================== Delimiter detection & decimal comma ==================== */
 function detectDelimiter(sample: string): string {
   const DELIMS = [",", ";", "\t", "|"];
   const lines = sample.split(/\r?\n/).filter((l) => l.trim()).slice(0, 10);
   if (!lines.length) return ",";
-
   let best = ",";
   let bestScore = -Infinity;
-
   for (const d of DELIMS) {
     const counts = lines.map((l) => l.split(d).length);
     const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
@@ -462,57 +493,44 @@ function detectDelimiter(sample: string): string {
       counts.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / counts.length;
     const score = mean - variance;
     if (score > bestScore || (score === bestScore && d === ",")) {
-      bestScore = score;
-      best = d;
+      bestScore = score; best = d;
     }
   }
   return best || ",";
 }
 
-// Heurística para pt-PT
 function parsePTNumberLike(s: string) {
   if (typeof s !== "string") return s;
   const trimmed = s.trim();
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
-  if (
-    /^-?\d{1,3}(\.\d{3})*,\d+$/.test(trimmed) ||
-    /^-?\d+,\d+$/.test(trimmed)
-  ) {
+  if (/^-?\d{1,3}(\.\d{3})*,\d+$/.test(trimmed) || /^-?\d+,\d+$/.test(trimmed)) {
     const noThousands = trimmed.replace(/\./g, "");
     return noThousands.replace(",", ".");
   }
-  if (/^-?\d{1,3}(\.\d{3})+$/.test(trimmed)) {
-    return trimmed.replace(/\./g, "");
-  }
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(trimmed)) return trimmed.replace(/\./g, "");
   return s;
 }
 
-/* ==================== Export helpers (SVG -> PNG) ==================== */
 async function exportChartPng(containerId: string, filename: string) {
   const root = document.getElementById(containerId);
   const svg = root?.querySelector("svg");
   if (!svg) return;
-
   const serializer = new XMLSerializer();
   const source = serializer.serializeToString(svg);
-
   const svgBlob = new Blob(
     ['<?xml version="1.0" standalone="no"?>\r\n', source],
     { type: "image/svg+xml;charset=utf-8" }
   );
   const url = URL.createObjectURL(svgBlob);
-
   const img = new Image();
   const bbox = (svg as SVGGraphicsElement).getBoundingClientRect();
   const width = Math.max(1, Math.floor(bbox.width));
   const height = Math.max(1, Math.floor(bbox.height));
   const scale = window.devicePixelRatio || 1;
-
   await new Promise<void>((resolve) => {
     img.onload = () => resolve();
     img.src = url;
   });
-
   const canvas = document.createElement("canvas");
   canvas.width = width * scale;
   canvas.height = height * scale;
@@ -522,7 +540,6 @@ async function exportChartPng(containerId: string, filename: string) {
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
   URL.revokeObjectURL(url);
-
   const pngUrl = canvas.toDataURL("image/png");
   const a = document.createElement("a");
   a.href = pngUrl;
@@ -530,7 +547,6 @@ async function exportChartPng(containerId: string, filename: string) {
   a.click();
 }
 
-/* ==================== Helpers de erros ==================== */
 function groupErrors(errs: string[]) {
   const groups = new Map<string, string[]>();
   for (const e of errs) {
@@ -545,7 +561,6 @@ function groupErrors(errs: string[]) {
     samples: items.slice(0, 10),
   }));
 }
-
 function groupErrorsByRow(errs: string[]) {
   const byRow = new Map<number, string[]>();
   for (const e of errs) {
@@ -557,11 +572,7 @@ function groupErrorsByRow(errs: string[]) {
     byRow.get(row)!.push(msg);
   }
   return Array.from(byRow.entries())
-    .map(([row, items]) => ({
-      row,
-      count: items.length,
-      items: items.slice(0, 10),
-    }))
+    .map(([row, items]) => ({ row, count: items.length, items: items.slice(0, 10) }))
     .sort((a, b) => a.row - b.row);
 }
 
@@ -574,7 +585,6 @@ function downloadText(filename: string, text: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
 function downloadJson(filename: string, obj: any) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], {
     type: "application/json;charset=utf-8",
@@ -587,7 +597,6 @@ function downloadJson(filename: string, obj: any) {
   URL.revokeObjectURL(url);
 }
 
-/* ==================== Preview helpers: highlight & virtualization ==================== */
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -602,10 +611,7 @@ function highlightMatch(text: string, query: string) {
     out.push(p);
     if (i < matches.length) {
       out.push(
-        <mark
-          key={`m-${i}`}
-          className="bg-yellow-300/30 text-yellow-200 px-0.5 rounded-sm"
-        >
+        <mark key={`m-${i}`} className="bg-yellow-300/30 text-yellow-200 px-0.5 rounded-sm">
           {matches[i]}
         </mark>
       );
@@ -614,7 +620,6 @@ function highlightMatch(text: string, query: string) {
   return <>{out}</>;
 }
 
-/* ==================== App ==================== */
 type TableColKey =
   | "shock_bps"
   | "eve_change"
@@ -628,19 +633,16 @@ export default function App() {
   const { lang, setLang, t } = useI18n();
   const reducedMotion = useReducedMotion();
 
-  // CSV preview state
   const [rows, setRows] = useState<Row[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [error, setError] = useState("");
 
-  // Validation state
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [headerMapState, setHeaderMapState] = useState<Record<string, string>>(
     {}
   );
   const [mappedHeaders, setMappedHeaders] = useState<string[]>([]);
 
-  // Toast
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(
     null
   );
@@ -649,51 +651,43 @@ export default function App() {
     window.setTimeout(() => setToast(null), 2500);
   };
 
-  // Modal preview
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Parser options
   const [delimiter, setDelimiter] = useState<string>("auto");
   const [headerRow, setHeaderRow] = useState(true);
 
-  // Parameters
   const [afsHaircut, setAfsHaircut] = useState<number>(0.1);
   const [depositRunoff, setDepositRunoff] = useState<number>(0.15);
   const [betaCore, setBetaCore] = useState<number>(0.3);
   const [betaNoncore, setBetaNoncore] = useState<number>(0.6);
   const [shocks, setShocks] = useState<number[]>([-200, -100, 0, 100, 200]);
 
-  // Drag & Drop
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Refs para devolver foco aos botões que abriram modals
   const schemaBtnRef = useRef<HTMLButtonElement | null>(null);
   const previewBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // Raw CSV
   const [rawCsv, setRawCsv] = useState<string>("");
 
-  // API results
   const [equity, setEquity] = useState<number>(0);
   const [results, setResults] = useState<ScenarioOut[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string>("");
 
-  // ---- Tabela: ordenação
   const [sortCol, setSortCol] = useState<TableColKey>("shock_bps");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const [showSchema, setShowSchema] = useState(true);
 
-  // Parsing state + perf metrics
   const [parsing, setParsing] = useState(false);
   const parseStartRef = useRef<number | null>(null);
   const [parseMs, setParseMs] = useState<number | null>(null);
   const firstRenderStartRef = useRef<number | null>(null);
   const [firstRenderMs, setFirstRenderMs] = useState<number | null>(null);
 
-  // Persistência
+
+
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(LS_KEY) || "null");
@@ -708,7 +702,7 @@ export default function App() {
         setDelimiter(saved.delimiter ?? "auto");
         setHeaderRow(saved.headerRow ?? true);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -723,7 +717,7 @@ export default function App() {
     };
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(data));
-    } catch {}
+    } catch { }
   }, [afsHaircut, depositRunoff, betaCore, betaNoncore, shocks, delimiter, headerRow]);
 
   const requiredMissing = useMemo(
@@ -741,7 +735,6 @@ export default function App() {
     [headers, mappedHeaders]
   );
 
-  /* ---- CSV upload/parse ---- */
   function parseFile(f: File) {
     setError("");
     setValidationErrors([]);
@@ -842,10 +835,7 @@ export default function App() {
     if (!f) return;
     const sizeMb = f.size / (1024 * 1024);
     if (sizeMb > MAX_FILE_MB) {
-      showToast(
-        "err",
-        t("dropHere", { mb: MAX_FILE_MB })
-      );
+      showToast("err", t("dropHere", { mb: MAX_FILE_MB }));
       return;
     }
     if (!/\.csv$/i.test(f.name)) {
@@ -859,35 +849,22 @@ export default function App() {
     validateAndParse(e.target.files?.[0]);
   }
 
-  // Drag & drop handlers
   function onDragEnter(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(true);
+    e.preventDefault(); e.stopPropagation(); setDragActive(true);
   }
   function onDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(true);
+    e.preventDefault(); e.stopPropagation(); setDragActive(true);
   }
   function onDragLeave(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+    e.preventDefault(); e.stopPropagation(); setDragActive(false);
   }
   function onDrop(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    const f = e.dataTransfer.files?.[0];
-    validateAndParse(f);
+    e.preventDefault(); e.stopPropagation(); setDragActive(false);
+    const f = e.dataTransfer.files?.[0]; validateAndParse(f);
   }
 
   useEffect(() => {
-    const prevent = (ev: DragEvent) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-    };
+    const prevent = (ev: DragEvent) => { ev.preventDefault(); ev.stopPropagation(); };
     window.addEventListener("dragover", prevent);
     window.addEventListener("drop", prevent);
     return () => {
@@ -896,7 +873,6 @@ export default function App() {
     };
   }, []);
 
-  /* ==================== Preview com paginação & pesquisa (debounce) ==================== */
   const [previewQuery, setPreviewQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [compactRows, setCompactRows] = useState(false);
@@ -921,28 +897,22 @@ export default function App() {
   }, [rows, headers, debouncedQuery]);
 
   const totalPages = Math.max(1, Math.ceil(previewRowsFiltered.length / pageSize));
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedQuery, rows, pageSize]);
+  useEffect(() => { setPage(1); }, [debouncedQuery, rows, pageSize]);
 
   const pageSlice = useMemo(() => {
     const start = (page - 1) * pageSize;
     return previewRowsFiltered.slice(start, start + pageSize);
   }, [previewRowsFiltered, page, pageSize]);
 
-  // primeira render do preview (para métrica básica)
   useEffect(() => {
     if (firstRenderStartRef.current != null && rows.length) {
       const ms = performance.now() - firstRenderStartRef.current;
       setFirstRenderMs(ms);
-      if (import.meta?.env?.DEV) {
-        console.log("[perf] initial preview render ms:", ms);
-      }
+      if (import.meta?.env?.DEV) console.log("[perf] initial preview render ms:", ms);
       firstRenderStartRef.current = null;
     }
   }, [rows, debouncedQuery, pageSize]);
 
-  /* ---- Run API ---- */
   async function runStressTest() {
     setApiError("");
     setResults([]);
@@ -986,7 +956,7 @@ export default function App() {
       const data = await resp.json();
       setEquity(data.equity ?? 0);
       setResults(Array.isArray(data.results) ? data.results : []);
-      showToast("ok", "OK");
+      showToast("ok", t("ok"));
     } catch (e: any) {
       setApiError(e?.message || "Request failed.");
       showToast("err", t("apiRunErr"));
@@ -995,7 +965,6 @@ export default function App() {
     }
   }
 
-  /* ---- Exports ---- */
   function exportResultsCsv() {
     if (!results.length) return;
     const header =
@@ -1040,7 +1009,6 @@ export default function App() {
     showToast("ok", t("jsonExported"));
   }
 
-  /* ---- Derived data ---- */
   const sortedResultsForCharts = useMemo(
     () => [...results].sort((a, b) => a.shock_bps - b.shock_bps),
     [results]
@@ -1079,7 +1047,6 @@ export default function App() {
       () => showToast("err", t("copyErr"))
     );
   }
-
   function downloadPreviewCsv() {
     const csv = rowsToCsv(
       headers.length ? headers : Object.keys(rows[0] || {}),
@@ -1100,96 +1067,44 @@ export default function App() {
     const byRow = groupErrorsByRow(validationErrors);
     const lines: string[] = [];
     lines.push(`# Validation report\n`);
-
     lines.push(`## By column`);
     byCol.forEach((g) => {
       lines.push(`- ${g.field}: ${g.count}`);
       g.samples.forEach((s) => lines.push(`  • ${s}`));
     });
-
     lines.push(`\n## By row`);
     byRow.forEach((g) => {
       lines.push(`- Row ${g.row}: ${g.count}`);
       g.items.forEach((s) => lines.push(`  • ${s}`));
     });
-
     downloadText("validation_errors.txt", lines.join("\n"));
   }
 
-  /* --- Sample CSV & schema modal --- */
   const [schemaOpen, setSchemaOpen] = useState(false);
-  function downloadSampleCsv() {
-    const head = [...REQUIRED_COLS, ...OPTIONAL_COLS].join(",");
-    const row1 = [
-      "loan",
-      "SME Term",
-      "2500000",
-      "0.055",
-      "48",
-      "asset",
-      "fixed",
-      "0",
-      "6-12m",
-      "",
-      "",
-      "",
-    ].join(",");
-    const row2 = [
-      "deposit",
-      "Core Checking",
-      "-4000000",
-      "0.01",
-      "0",
-      "liability",
-      "float",
-      "1",
-      "<1m",
-      "0.3",
-      "0.95",
-      "",
-    ].join(",");
-    const csv = head + "\n" + row1 + "\n" + row2 + "\n";
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "sample_bank_book.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
-  /* ===================== UI ===================== */
   const groupedIssues = groupErrors(validationErrors);
   const groupedByRow = useMemo(
     () => groupErrorsByRow(validationErrors),
     [validationErrors]
   );
 
-  // helpers UI
   const SortHeader = ({
     col,
     label,
   }: {
-    col: TableColKey;
-    label: string;
+    col: TableColKey; label: string;
   }) => {
     const active = sortCol === col;
     const dir = active ? sortDir : undefined;
-    const ariaSort =
-      active ? (dir === "asc" ? "ascending" : "descending") : "none";
+    const ariaSort = active ? (dir === "asc" ? "ascending" : "descending") : "none";
     return (
       <th className="text-left px-3 py-2 border-b border-white/10">
         <button
-          className={`inline-flex items-center gap-1 text-sm hover:opacity-90 ${
-            active ? "text-white" : "text-white/85"
-          }`}
+          className={`inline-flex items-center gap-1 text-sm hover:opacity-90 ${active ? "text-white" : "text-white/85"}`}
           aria-sort={ariaSort as any}
           onClick={() => {
             if (active) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-            else {
-              setSortCol(col);
-              setSortDir(col === "shock_bps" ? "asc" : "desc");
-            }
+            else { setSortCol(col); setSortDir(col === "shock_bps" ? "asc" : "desc"); }
           }}
           title="Sort"
         >
@@ -1224,541 +1139,415 @@ export default function App() {
     </UiTooltip>
   );
 
-  const kpiBox = (
-    label: string,
-    value: string,
-    hint?: string,
-    sub?: string
-  ) => (
+  const kpiBox = (label: string, value: string, hint?: string, sub?: string) => (
     <div className="rounded-xl border border-white/15 bg-white/[0.06] backdrop-blur p-4">
       <div className="text-xs text-white/80 flex items-center">
         {label}
         {hint ? kpiHintIcon(hint) : null}
       </div>
-      <div className="mt-1 text-[32px] leading-[36px] font-semibold">
+      <div
+        className="mt-1 font-semibold leading-[1.1] text-[clamp(20px,3.6vw,32px)] whitespace-nowrap overflow-hidden text-ellipsis"
+        title={value}
+      >
         {value}
       </div>
       {sub ? <div className="mt-1 text-[12px] text-white/70">{sub}</div> : null}
     </div>
   );
 
-  /* -------- Skeletons -------- */
   const Skeleton = ({ className = "" }: { className?: string }) => (
-    <div
-      className={`${!reducedMotion ? "animate-pulse" : ""} rounded-lg bg-white/10 ${className}`}
-    />
+    <div className={`${!reducedMotion ? "animate-pulse" : ""} rounded-lg bg-white/10 ${className}`} />
   );
 
   return (
-    <UiTooltipProvider delayDuration={120}>
-      <div className="min-h-screen">
-        <BackgroundGlow />
+    <AnimatedPageWrapper>
+      <UiTooltipProvider delayDuration={120}>
+        <div className="min-h-screen">
+          <div className="container max-w-6xl py-8 space-y-6">
+            {/* Header */}
+            <header className="flex items-center justify-between gap-3">
+              <Link to="/" className="text-[32px] leading-[36px] font-semibold tracking-tight hover:opacity-90">
+                {t("appTitle")}
+              </Link>
 
-        {/* Toast */}
-        {toast && (
-          <div
-            role="status"
-            aria-live="polite"
-            className={`fixed right-4 top-4 z-[100] rounded-xl border px-3 py-2 text-sm ${
-              !reducedMotion ? "backdrop-blur" : ""
-            } ${
-              toast.type === "ok"
-                ? "bg-emerald-500/20 text-emerald-200 border-emerald-400/50"
-                : "bg-rose-500/20 text-rose-200 border-rose-400/50"
-            }`}
-            data-testid="toast"
-          >
-            {toast.msg}
-          </div>
-        )}
-
-        <div className="container max-w-6xl py-8 space-y-6">
-          {/* Header */}
-          <header className="flex items-center justify-between gap-3">
-            <h1 className="text-[32px] leading-[36px] font-semibold tracking-tight">
-              {t("appTitle")}
-            </h1>
-
-            <div className="flex items-center gap-2">
-              {/* Language toggle */}
-              <div
-                role="group"
-                aria-label={t("lang")}
-                className="inline-flex rounded-xl border border-white/10 overflow-hidden"
-              >
-                <button
-                  type="button"
-                  onClick={() => setLang("pt")}
-                  className={`px-3 py-1.5 text-xs ${
-                    lang === "pt" ? "bg-white/20" : "bg-white/5"
-                  } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
-                  aria-pressed={lang === "pt"}
+              <div className="flex items-center gap-2">
+                <div
+                  role="group"
+                  aria-label={t("lang")}
+                  className="inline-flex rounded-xl border border-white/10 overflow-hidden"
                 >
-                  PT
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLang("en")}
-                  className={`px-3 py-1.5 text-xs ${
-                    lang === "en" ? "bg-white/20" : "bg-white/5"
-                  } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
-                  aria-pressed={lang === "en"}
-                >
-                  EN
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setLang("pt")}
+                    className={`px-3 py-1.5 text-xs flex items-center gap-1 ${lang === "pt" ? "bg-white/20" : "bg-white/5"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
+                    aria-pressed={lang === "pt"}
+                    title={t("lang")}
+                  >
+                    <Languages className="h-3.5 w-3.5" /> PT
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLang("en")}
+                    className={`px-3 py-1.5 text-xs flex items-center gap-1 ${lang === "en" ? "bg-white/20" : "bg-white/5"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
+                    aria-pressed={lang === "en"}
+                    title={t("lang")}
+                  >
+                    <Languages className="h-3.5 w-3.5" /> EN
+                  </button>
+                </div>
+
+                <Badge variant="secondary" className="text-xs" aria-label="App version">
+                  {t("version")}
+                </Badge>
               </div>
+            </header>
 
-              <Badge
-                variant="secondary"
-                className="text-xs"
-                aria-label="App version"
-              >
-                {t("version")}
-              </Badge>
-            </div>
-          </header>
-
-          {/* Layout */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            {/* Sidebar */}
-            <aside className="lg:col-span-4">
-              <div className="lg:sticky lg:top-6 space-y-6">
-                <Card className={PANEL} aria-labelledby="data-params-title">
-                  <CardHeader>
-                    <CardTitle
-                      id="data-params-title"
-                      className="text-[20px] leading-[24px]"
-                    >
-                      {t("dataParams")}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Upload */}
-                    <div
-                      onDragEnter={onDragEnter}
-                      onDragOver={onDragOver}
-                      onDragLeave={onDragLeave}
-                      onDrop={onDrop}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ")
-                          inputRef.current?.click();
-                      }}
-                      aria-label={t("dropHere", { mb: MAX_FILE_MB })}
-                      className={`rounded-xl border p-3 transition ${
-                        dragActive
-                          ? "border-sky-400 bg-sky-400/10"
-                          : "border-white/10 bg-white/5"
-                      }`}
-                      data-testid="upload-zone"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm">
-                          <div className="font-medium">{t("csvFile")}</div>
-                          <div className="text-xs text-white/70">
-                            {t("dropHere", { mb: MAX_FILE_MB })}
+            {/* Layout */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              {/* Sidebar */}
+              <aside className="lg:col-span-4">
+                <div className="lg:sticky lg:top-6 space-y-6">
+                  <Card className={PANEL} aria-labelledby="data-params-title">
+                    <CardHeader>
+                      <CardTitle id="data-params-title" className="text-[20px] leading-[24px]">
+                        {t("dataParams")}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Upload */}
+                      <div
+                        onDragEnter={onDragEnter}
+                        onDragOver={onDragOver}
+                        onDragLeave={onDragLeave}
+                        onDrop={onDrop}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+                        }}
+                        aria-label={t("dropHere", { mb: MAX_FILE_MB })}
+                        className={`rounded-xl border p-3 transition ${dragActive ? "border-sky-400 bg-sky-400/10" : "border-white/10 bg-white/5"}`}
+                        data-testid="upload-zone"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm">
+                            <div className="font-medium">{t("csvFile")}</div>
+                            <div className="text-xs text-white/70">
+                              {t("dropHere", { mb: MAX_FILE_MB })}
+                            </div>
+                            {parseMs != null && (
+                              <div className="text-xs text-white/60 mt-1">
+                                Parse: {Math.round(parseMs)} ms
+                                {firstRenderMs != null ? ` · 1st render: ${Math.round(firstRenderMs)} ms` : ""}
+                              </div>
+                            )}
                           </div>
-                          {parseMs != null && (
-                            <div className="text-xs text-white/60 mt-1">
-                              Parse: {Math.round(parseMs)} ms
-                              {firstRenderMs != null
-                                ? ` · 1st render: ${Math.round(firstRenderMs)} ms`
-                                : ""}
+                          <div className="flex flex-col gap-2 w-full">
+                            <Button
+                              variant="secondary"
+                              className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={() => inputRef.current?.click()}
+                              aria-label={t("chooseFile")}
+                              data-testid="choose-file-btn"
+                            >
+                              <Upload className="h-4 w-4 mr-1.5" />
+                              {t("chooseFile")}
+                            </Button>
+                          </div>
+                        </div>
+                        <input
+                          ref={inputRef}
+                          id="file-upload"
+                          type="file"
+                          accept=".csv,text/csv"
+                          onChange={onFileChange}
+                          className="hidden"
+                          aria-label={t("chooseFile")}
+                          data-testid="file-input"
+                        />
+                      </div>
+
+                      {/* Delimiter + checkbox */}
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="block text-xs mb-1 opacity-80">{t("delimiter")}</label>
+                          <div className="relative">
+                            <select
+                              value={delimiter}
+                              onChange={(e) => setDelimiter(e.target.value)}
+                              className={SELECT_FIELD}
+                              aria-label={t("delimiter")}
+                              data-testid="delimiter-select"
+                            >
+                              <option value="auto">{t("autoDetect")}</option>
+                              <option value=",">{t("comma")}</option>
+                              <option value=";">{t("semicolon")}</option>
+                              <option value="\t">{t("tab")}</option>
+                              <option value="|">{t("pipe")}</option>
+                            </select>
+                            <svg aria-hidden="true" viewBox="0 0 20 20" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70">
+                              <path fill="currentColor" d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        <label className="mt-6 flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={headerRow}
+                            onChange={(e) => setHeaderRow(e.target.checked)}
+                            className={CHECKBOX}
+                            aria-label={t("headerRow")}
+                            data-testid="headers-checkbox"
+                          />
+                          {t("headerRow")}
+                        </label>
+                      </div>
+
+                      {/* Parameters */}
+                      <label className="text-sm block">
+                        {t("afsHaircut")}
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          max={0.5}
+                          value={afsHaircut}
+                          onChange={(e) => setAfsHaircut(Number(e.target.value))}
+                          className={FIELD_NUMBER}
+                          aria-label={t("afsHaircut")}
+                        />
+                      </label>
+
+                      <label className="text-sm block">
+                        {t("depositRunoff")}
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          max={1}
+                          value={depositRunoff}
+                          onChange={(e) => setDepositRunoff(Number(e.target.value))}
+                          className={FIELD_NUMBER}
+                          aria-label={t("depositRunoff")}
+                        />
+                      </label>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm block">
+                          {t("betaCore")}
+                          <input
+                            type="number"
+                            step="0.05"
+                            min={0}
+                            max={1}
+                            value={betaCore}
+                            onChange={(e) => setBetaCore(Number(e.target.value))}
+                            className={FIELD_NUMBER}
+                            aria-label={t("betaCore")}
+                          />
+                        </label>
+                        <label className="text-sm block">
+                          {t("betaNoncore")}
+                          <input
+                            type="number"
+                            step="0.05"
+                            min={0}
+                            max={1}
+                            value={betaNoncore}
+                            onChange={(e) => setBetaNoncore(Number(e.target.value))}
+                            className={FIELD_NUMBER}
+                            aria-label={t("betaNoncore")}
+                          />
+                        </label>
+                      </div>
+
+                      <label className="text-sm block">
+                        {t("shocks")}
+                        <input
+                          type="text"
+                          value={shocks.join(",")}
+                          onChange={(e) => {
+                            const xs = e.target.value
+                              .split(",")
+                              .map((s) => Number(s.trim()))
+                              .filter((n) => !Number.isNaN(n));
+                            setShocks(xs);
+                          }}
+                          className={FIELD}
+                          placeholder="-200,-100,0,100,200"
+                          aria-label={t("shocks")}
+                        />
+                      </label>
+
+                      <div className="grid gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            ref={previewBtnRef}
+                            variant="secondary"
+                            className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                            onClick={() => setPreviewOpen(true)}
+                            disabled={(headers.length === 0 && rows.length === 0) || parsing}
+                            title={headers.length === 0 && rows.length === 0 ? t("needCsv") : t("previewCsv")}
+                            aria-haspopup="dialog"
+                            aria-controls="preview-dialog"
+                            data-testid="preview-btn"
+                          >
+                            <Eye className="h-4 w-4 mr-1.5" />
+                            {t("previewCsv")}
+                          </Button>
+                          <Button
+                            ref={schemaBtnRef}
+                            variant="secondary"
+                            className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                            onClick={() => setSchemaOpen(true)}
+                            aria-haspopup="dialog"
+                            data-testid="schema-btn"
+                          >
+                            <FileSpreadsheet className="h-4 w-4 mr-1.5" />
+                            {t("viewSchema")}
+                          </Button>
+                        </div>
+
+                        <Button onClick={runStressTest} disabled={loading} className="w-full" data-testid="run-btn">
+                          {loading ? (
+                            <span className="inline-flex items-center gap-2" aria-busy="true">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              {t("running")}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2">
+                              <Play className="h-4 w-4" />
+                              {t("run")}
+                            </span>
+                          )}
+                        </Button>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant="secondary"
+                            className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                            onClick={exportResultsCsv}
+                            disabled={results.length === 0}
+                            title={results.length === 0 ? t("run") : t("exportCsv")}
+                            data-testid="export-csv-btn"
+                          >
+                            <Download className="h-4 w-4 mr-1.5" />
+                            {t("exportCsv")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
+                            onClick={exportResultsJson}
+                            disabled={results.length === 0}
+                            title={results.length === 0 ? t("run") : t("exportJson")}
+                            data-testid="export-json-btn"
+                          >
+                            <FileJson className="h-4 w-4 mr-1.5" />
+                            {t("exportJson")}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {parsing && (
+                        <div className="space-y-2" aria-busy="true">
+                          <Skeleton className="h-3 w-2/3" />
+                          <Skeleton className="h-3 w-1/3" />
+                          <Skeleton className="h-10 w-full" />
+                        </div>
+                      )}
+
+                      {(apiError || error) && (
+                        <div
+                          className="rounded-lg border border-red-500/40 bg-red-500/20 p-3 text-xs text-red-100 flex items-start gap-2"
+                          role="alert"
+                          data-testid="error-box"
+                        >
+                          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                          <span>{apiError || error}</span>
+                        </div>
+                      )}
+
+                      {validationErrors.length > 0 && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-2 max-h-48 overflow-auto" data-testid="validation-box">
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium">
+                              {t("validationIssues", { n: validationErrors.length })}
+                            </div>
+                            <Button
+                              variant="secondary"
+                              className="h-7 px-2 bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={downloadErrorsTxt}
+                              data-testid="download-errors-btn"
+                            >
+                              <FileDown className="h-4 w-4 mr-1" />
+                              {t("downloadTxt")}
+                            </Button>
+                          </div>
+                          {groupedIssues.map((g) => (
+                            <div key={g.field}>
+                              <div className="opacity-90">{g.field} — {g.count}</div>
+                              {g.samples.map((s, i) => (<div key={i}>• {s}</div>))}
+                            </div>
+                          ))}
+                          {groupedByRow.length > 0 && (
+                            <div className="mt-2">
+                              <div className="opacity-90">{t("topRows")}</div>
+                              {groupedByRow.slice(0, 5).map((g) => (
+                                <div key={g.row}>• Row {g.row}: {g.count}</div>
+                              ))}
                             </div>
                           )}
                         </div>
-                        <div className="flex flex-col gap-2 w-full">
-                          <Button
-                            variant="secondary"
-                            className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
-                            onClick={() => inputRef.current?.click()}
-                            aria-label={t("chooseFile")}
-                            data-testid="choose-file-btn"
-                          >
-                            {t("chooseFile")}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
-                            onClick={downloadSampleCsv}
-                            title={t("sampleCsv")}
-                            data-testid="sample-btn"
-                          >
-                            {t("sampleCsv")}
-                          </Button>
-                        </div>
-                      </div>
-                      <input
-                        ref={inputRef}
-                        id="file-upload"
-                        type="file"
-                        accept=".csv,text/csv"
-                        onChange={onFileChange}
-                        className="hidden"
-                        aria-label={t("chooseFile")}
-                        data-testid="file-input"
-                      />
-                    </div>
-
-                    {/* Delimiter + checkbox */}
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1">
-                        <label className="block text-xs mb-1 opacity-80">
-                          {t("delimiter")}
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={delimiter}
-                            onChange={(e) => setDelimiter(e.target.value)}
-                            className={SELECT_FIELD}
-                            aria-label={t("delimiter")}
-                            data-testid="delimiter-select"
-                          >
-                            <option value="auto">{t("autoDetect")}</option>
-                            <option value=",">{t("comma")}</option>
-                            <option value=";">{t("semicolon")}</option>
-                            <option value="\t">{t("tab")}</option>
-                            <option value="|">{t("pipe")}</option>
-                          </select>
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 20 20"
-                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-70"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M5.5 7.5L10 12l4.5-4.5"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </div>
-                      </div>
-
-                      <label className="mt-6 flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={headerRow}
-                          onChange={(e) => setHeaderRow(e.target.checked)}
-                          className={CHECKBOX}
-                          aria-label={t("headerRow")}
-                          data-testid="headers-checkbox"
-                        />
-                        {t("headerRow")}
-                      </label>
-                    </div>
-
-                    {/* === Parameters === */}
-                    <label className="text-sm block">
-                      {t("afsHaircut")}
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        max={0.5}
-                        value={afsHaircut}
-                        onChange={(e) => setAfsHaircut(Number(e.target.value))}
-                        className={FIELD_NUMBER}
-                        aria-label={t("afsHaircut")}
-                      />
-                    </label>
-
-                    <label className="text-sm block">
-                      {t("depositRunoff")}
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        max={1}
-                        value={depositRunoff}
-                        onChange={(e) =>
-                          setDepositRunoff(Number(e.target.value))
-                        }
-                        className={FIELD_NUMBER}
-                        aria-label={t("depositRunoff")}
-                      />
-                    </label>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="text-sm block">
-                        {t("betaCore")}
-                        <input
-                          type="number"
-                          step="0.05"
-                          min={0}
-                          max={1}
-                          value={betaCore}
-                          onChange={(e) => setBetaCore(Number(e.target.value))}
-                          className={FIELD_NUMBER}
-                          aria-label={t("betaCore")}
-                        />
-                      </label>
-                      <label className="text-sm block">
-                        {t("betaNoncore")}
-                        <input
-                          type="number"
-                          step="0.05"
-                          min={0}
-                          max={1}
-                          value={betaNoncore}
-                          onChange={(e) =>
-                            setBetaNoncore(Number(e.target.value))
-                          }
-                          className={FIELD_NUMBER}
-                          aria-label={t("betaNoncore")}
-                        />
-                      </label>
-                    </div>
-
-                    <label className="text-sm block">
-                      {t("shocks")}
-                      <input
-                        type="text"
-                        value={shocks.join(",")}
-                        onChange={(e) => {
-                          const xs = e.target.value
-                            .split(",")
-                            .map((s) => Number(s.trim()))
-                            .filter((n) => !Number.isNaN(n));
-                          setShocks(xs);
-                        }}
-                        className={FIELD}
-                        placeholder="-200,-100,0,100,200"
-                        aria-label={t("shocks")}
-                      />
-                    </label>
-
-                    <div className="grid gap-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          ref={previewBtnRef}
-                          variant="secondary"
-                          className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={() => setPreviewOpen(true)}
-                          disabled={
-                            (headers.length === 0 && rows.length === 0) ||
-                            parsing
-                          }
-                          title={
-                            headers.length === 0 && rows.length === 0
-                              ? t("needCsv")
-                              : t("previewCsv")
-                          }
-                          aria-haspopup="dialog"
-                          aria-controls="preview-dialog"
-                          data-testid="preview-btn"
-                        >
-                          {t("previewCsv")}
-                        </Button>
-                        <Button
-                          ref={schemaBtnRef}
-                          variant="secondary"
-                          className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={() => setSchemaOpen(true)}
-                          aria-haspopup="dialog"
-                          data-testid="schema-btn"
-                        >
-                          {t("viewSchema")}
-                        </Button>
-                      </div>
-
-                      <Button
-                        onClick={runStressTest}
-                        disabled={loading}
-                        className="w-full"
-                        data-testid="run-btn"
-                      >
-                        {loading ? (
-                          <span
-                            className="inline-flex items-center gap-2"
-                            aria-busy="true"
-                          >
-                            {!reducedMotion && (
-                              <>
-                                <span className="h-3 w-3 animate-pulse rounded-full bg-white/80" />
-                                <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:150ms]" />
-                                <span className="h-3 w-3 animate-pulse rounded-full bg-white/80 [animation-delay:300ms]" />
-                              </>
-                            )}
-                            {t("running")}
-                          </span>
-                        ) : (
-                          t("run")
-                        )}
-                      </Button>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          variant="secondary"
-                          className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={exportResultsCsv}
-                          disabled={results.length === 0}
-                          title={
-                            results.length === 0
-                              ? t("run")
-                              : t("exportCsv")
-                          }
-                          data-testid="export-csv-btn"
-                        >
-                          {t("exportCsv")}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          className="w-full bg-white/10 hover:bg-white/15 border border-white/10"
-                          onClick={exportResultsJson}
-                          disabled={results.length === 0}
-                          title={
-                            results.length === 0
-                              ? t("run")
-                              : t("exportJson")
-                          }
-                          data-testid="export-json-btn"
-                        >
-                          {t("exportJson")}
-                        </Button>
-                      </div>
-                    </div>
-
-                    {!headers.length &&
-                      !error &&
-                      rows.length === 0 &&
-                      !parsing && (
-                        <p className="text-xs text-white/70">
-                          {t("tipSample")}{" "}
-                          <button
-                            className="underline"
-                            onClick={downloadSampleCsv}
-                            data-testid="download-sample-inline"
-                          >
-                            {t("sampleCsv")}
-                          </button>
-                          .
-                        </p>
                       )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </aside>
 
-                    {parsing && (
-                      <div className="space-y-2" aria-busy="true">
-                        <Skeleton className="h-3 w-2/3" />
-                        <Skeleton className="h-3 w-1/3" />
-                        <Skeleton className="h-10 w-full" />
+              {/* Main */}
+              <main className="lg:col-span-8 space-y-6">
+                {rows.length === 0 && results.length === 0 && !error && !parsing && (
+                  <Card className={PANEL} aria-label={t("emptyStateCard")}>
+                    <CardContent className="py-10 text-center space-y-3">
+                      <h2 className="text-[24px] leading-[28px] font-semibold">{t("emptyTitle")}</h2>
+                      <p className="text-white/80 text-sm">{t("emptySub")}</p>
+                      <div className="flex items-center justify-center gap-2">
+                        <Button variant="secondary" onClick={() => inputRef.current?.click()} data-testid="choose-file-cta">
+                          <Upload className="h-4 w-4 mr-1.5" />
+                          {t("chooseFileCta")}
+                        </Button>
                       </div>
-                    )}
+                    </CardContent>
+                  </Card>
+                )}
 
-                    {(apiError || error) && (
-                      <div
-                        className="rounded-lg border border-red-500/40 bg-red-500/20 p-3 text-xs text-red-100"
-                        role="alert"
-                        data-testid="error-box"
-                      >
-                        {apiError || error}
+                {parsing && (
+                  <Card className={PANEL} aria-label="Parsing skeleton">
+                    <CardContent className="p-4 space-y-3">
+                      <Skeleton className="h-6 w-40" />
+                      <Skeleton className="h-40 w-full" />
+                      <div className="grid grid-cols-3 gap-3">
+                        <Skeleton className="h-20" />
+                        <Skeleton className="h-20" />
+                        <Skeleton className="h-20" />
                       </div>
-                    )}
+                    </CardContent>
+                  </Card>
+                )}
 
-                    {validationErrors.length > 0 && (
-                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/15 p-3 text-xs text-amber-100 space-y-2 max-h-48 overflow-auto" data-testid="validation-box">
-                        <div className="flex items-center justify-between">
-                          <div className="font-medium">
-                            {t("validationIssues", {
-                              n: validationErrors.length,
-                            })}
-                          </div>
-                          <Button
-                            variant="secondary"
-                            className="h-7 px-2 bg-white/10 hover:bg-white/15 border border-white/10"
-                            onClick={downloadErrorsTxt}
-                            data-testid="download-errors-btn"
-                          >
-                            {t("downloadTxt")}
-                          </Button>
-                        </div>
-                        {groupedIssues.map((g) => (
-                          <div key={g.field}>
-                            <div className="opacity-90">
-                              {g.field} — {g.count}
-                            </div>
-                            {g.samples.map((s, i) => (
-                              <div key={i}>• {s}</div>
-                            ))}
-                          </div>
-                        ))}
-                        {groupedByRow.length > 0 && (
-                          <div className="mt-2">
-                            <div className="opacity-90">{t("topRows")}</div>
-                            {groupedByRow.slice(0, 5).map((g) => (
-                              <div key={g.row}>
-                                • Row {g.row}: {g.count}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </aside>
-
-            {/* Main */}
-            <main className="lg:col-span-8 space-y-6">
-              {/* Estado vazio */}
-              {rows.length === 0 && results.length === 0 && !error && !parsing && (
-                <Card className={PANEL} aria-label={t("emptyStateCard")}>
-                  <CardContent className="py-10 text-center space-y-3">
-                    <h2 className="text-[24px] leading-[28px] font-semibold">
-                      {t("emptyTitle")}
-                    </h2>
-                    <p className="text-white/80 text-sm">{t("emptySub")}</p>
-                    <div className="flex items-center justify-center gap-2">
-                      <Button onClick={downloadSampleCsv}>
-                        {t("downloadSample")}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={() => inputRef.current?.click()}
-                        data-testid="choose-file-cta"
-                      >
-                        {t("chooseFileCta")}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {parsing && (
-                <Card className={PANEL} aria-label="Parsing skeleton">
-                  <CardContent className="p-4 space-y-3">
-                    <Skeleton className="h-6 w-40" />
-                    <Skeleton className="h-40 w-full" />
-                    <div className="grid grid-cols-3 gap-3">
-                      <Skeleton className="h-20" />
-                      <Skeleton className="h-20" />
-                      <Skeleton className="h-20" />
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Schema card */}
-              {showSchema &&
-                (headers.length > 0 || mappedHeaders.length > 0) &&
-                !parsing && (
+                {/* Schema card */}
+                {showSchema && (headers.length > 0 || mappedHeaders.length > 0) && !parsing && (
                   <Card className={PANEL}>
                     <CardHeader>
-                      <CardTitle className="text-[20px] leading-[24px]">
-                        {t("schema")}
-                      </CardTitle>
+                      <CardTitle className="text-[20px] leading-[24px]">{t("schema")}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="flex items-center gap-2 text-xs">
                         <span
-                          className={`px-2 py-1 rounded-full border group relative cursor-default ${
-                            requiredMissing.length === 0
-                              ? "bg-emerald-500/20 text-emerald-200 border-emerald-500/60"
-                              : "bg-red-500/20 text-red-200 border-red-500/60"
-                          }`}
+                          className={`px-2 py-1 rounded-full border group relative cursor-default ${requiredMissing.length === 0
+                            ? "bg-emerald-500/20 text-emerald-200 border-emerald-500/60"
+                            : "bg-red-500/20 text-red-200 border-red-500/60"}`}
                           title="Required columns status"
                         >
                           {t("requiredStatus", {
@@ -1780,26 +1569,20 @@ export default function App() {
 
                       {requiredMissing.length > 0 && (
                         <p className="text-xs text-red-300">
-                          {t("missingRequired", {
-                            cols: requiredMissing.join(", "),
-                          })}
+                          {t("missingRequired", { cols: requiredMissing.join(", ") })}
                         </p>
                       )}
 
                       {Object.keys(headerMapState).length > 0 && (
                         <div className="text-xs text-white/80">
-                          <div className="font-medium mb-1">
-                            {t("autoMap")}
-                          </div>
+                          <div className="font-medium mb-1">{t("autoMap")}</div>
                           <ul className="list-disc ml-5 space-y-0.5">
-                            {Object.entries(headerMapState).map(
-                              ([orig, exp]) => (
-                                <li key={orig}>
-                                  <span className="text-white">{orig}</span> →{" "}
-                                  <span className="text-emerald-300">{exp}</span>
-                                </li>
-                              )
-                            )}
+                            {Object.entries(headerMapState).map(([orig, exp]) => (
+                              <li key={orig}>
+                                <span className="text-white">{orig}</span> →{" "}
+                                <span className="text-emerald-300">{exp}</span>
+                              </li>
+                            ))}
                           </ul>
                         </div>
                       )}
@@ -1807,707 +1590,567 @@ export default function App() {
                   </Card>
                 )}
 
-              {/* Results */}
-              {(results.length > 0 || loading) && (
-                <Card className={PANEL}>
-                  <CardHeader>
-                    <CardTitle className="text-[24px] leading-[28px]">
-                      {t("results")}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {loading ? (
-                      <>
-                        <div className="grid gap-4 sm:grid-cols-3">
-                          <Skeleton className="h-24" />
-                          <Skeleton className="h-24" />
-                          <Skeleton className="h-24" />
-                        </div>
-                        <Skeleton className="h-72 w-full" />
-                        <Skeleton className="h-72 w-full" />
-                        <Skeleton className="h-80 w-full" />
-                      </>
-                    ) : (
-                      <>
-                        {/* KPIs */}
-                        <div className="grid gap-4 sm:grid-cols-3">
-                          {kpiBox(
-                            t("equity"),
-                            fmtMoney(equity),
-                            t("equityHint"),
-                            t("equitySub")
-                          )}
-                          {kpiBox(
-                            t("bestEve"),
-                            (() => {
-                              const best = Math.max(
-                                ...results.map((r) => r.eve_pct_equity * 100)
-                              );
-                              return fmtSignedPct(best, 1);
-                            })(),
-                            t("eveHint"),
-                            t("bestAmong")
-                          )}
-                          {kpiBox(
-                            t("worstEve"),
-                            (() => {
-                              const worst = Math.min(
-                                ...results.map((r) => r.eve_pct_equity * 100)
-                              );
-                              return fmtSignedPct(worst, 1);
-                            })(),
-                            t("eveHint"),
-                            t("worstAmong")
-                          )}
-                        </div>
+                {/* Results */}
+                {(results.length > 0 || loading) && (
+                  <Card className={PANEL}>
+                    <CardHeader>
+                      <CardTitle className="text-[24px] leading-[28px]">{t("results")}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {loading ? (
+                        <>
+                          <div className="grid gap-4 sm:grid-cols-3">
+                            <Skeleton className="h-24" />
+                            <Skeleton className="h-24" />
+                            <Skeleton className="h-24" />
+                          </div>
+                          <Skeleton className="h-72 w-full" />
+                          <Skeleton className="h-72 w-full" />
+                          <Skeleton className="h-80 w-full" />
+                        </>
+                      ) : (
+                        <>
+                          {/* KPIs */}
+                          <div className="grid gap-4 sm:grid-cols-3">
+                            {kpiBox(t("equity"), fmtMoneyCompact(equity), t("equityHint"), t("equitySub"))}
+                            {kpiBox(
+                              t("bestEve"),
+                              (() => {
+                                const best = Math.max(...results.map((r) => r.eve_pct_equity * 100));
+                                return fmtSignedPct(best, 1);
+                              })(),
+                              t("eveHint"),
+                              t("bestAmong")
+                            )}
+                            {kpiBox(
+                              t("worstEve"),
+                              (() => {
+                                const worst = Math.min(...results.map((r) => r.eve_pct_equity * 100));
+                                return fmtSignedPct(worst, 1);
+                              })(),
+                              t("eveHint"),
+                              t("worstAmong")
+                            )}
+                          </div>
 
-                        {/* ΔEVE / Equity */}
-                        <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
-                          <div className="mb-2 flex items-center justify-between">
-                            <div className="text-sm text-white/80">
-                              {t("eveVsShock")}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="bg-white/10 hover:bg-white/15 border border-white/10"
-                              onClick={() =>
-                                exportChartPng("chart-eve", "eve_vs_shock.png")
-                              }
-                              data-testid="export-eve-png"
-                            >
-                              {t("exportPng")}
-                            </Button>
-                          </div>
-                          <div id="chart-eve">
-                            <ResponsiveContainer width="100%" height={260}>
-                              <AreaChart data={sortedResultsForCharts}>
-                                <CartesianGrid stroke="rgba(255,255,255,0.18)" />
-                                <XAxis
-                                  dataKey="shock_bps"
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                />
-                                <YAxis
-                                  tickFormatter={(v) =>
-                                    fmtPct((Number(v) || 0) * 100)
-                                  }
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                />
-                                <RechartTooltip
-                                  formatter={(val: any, name: any) => {
-                                    if (name === "ΔEVE/Equity") {
-                                      const pct = (val as number) * 100;
-                                      return fmtSignedPct(pct, 1);
-                                    }
-                                    return val;
-                                  }}
-                                  labelFormatter={(l) => `Shock: ${l} bps`}
-                                  cursor={{
-                                    stroke: "rgba(255,255,255,0.35)",
-                                    strokeWidth: 1,
-                                  }}
-                                  contentStyle={{
-                                    background: "rgba(10,10,10,0.9)",
-                                    border: "1px solid rgba(255,255,255,0.25)",
-                                    borderRadius: 12,
-                                    color: "#F3F4F6",
-                                  }}
-                                />
-                                <Area
-                                  type="monotone"
-                                  dataKey="eve_pct_equity"
-                                  name="ΔEVE/Equity"
-                                  fill="rgba(96,165,250,0.35)"       // azul + contraste
-                                  stroke="#93C5FD"
-                                  strokeWidth={2.4}
-                                  isAnimationActive={!reducedMotion}
-                                  activeDot
-                                />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-
-                        {/* ΔNII (12m) */}
-                        <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
-                          <div className="mb-2 flex items-center justify-between">
-                            <div className="text-sm text-white/80">
-                              {t("niiVsShock")}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="bg-white/10 hover:bg-white/15 border border-white/10"
-                              onClick={() =>
-                                exportChartPng("chart-nii", "nii_vs_shock.png")
-                              }
-                              data-testid="export-nii-png"
-                            >
-                              {t("exportPng")}
-                            </Button>
-                          </div>
-                          <div id="chart-nii">
-                            <ResponsiveContainer width="100%" height={260}>
-                              <LineChart data={sortedResultsForCharts}>
-                                <CartesianGrid stroke="rgba(255,255,255,0.16)" />
-                                <XAxis
-                                  dataKey="shock_bps"
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                />
-                                <YAxis
-                                  tickFormatter={fmtMoney}
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                />
-                                <RechartTooltip
-                                  formatter={(val: any, name: any) =>
-                                    name === "ΔNII (12m)"
-                                      ? fmtSignedMoney(Number(val))
-                                      : val
-                                  }
-                                  labelFormatter={(l) => `Shock: ${l} bps`}
-                                  contentStyle={{
-                                    background: "rgba(10,10,10,0.9)",
-                                    border: "1px solid rgba(255,255,255,0.25)",
-                                    borderRadius: 12,
-                                    color: "#F3F4F6",
-                                  }}
-                                />
-                                <Line
-                                  type="monotone"
-                                  dataKey="nii_delta"
-                                  name="ΔNII (12m)"
-                                  stroke="#34D399" // emerald 400 (contraste)
-                                  strokeWidth={2.4}
-                                  dot={{ r: 2 }}
-                                  isAnimationActive={!reducedMotion}
-                                  activeDot
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-
-                        {/* LCR */}
-                        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
-                          <div className="mb-2 flex items-center justify-between">
-                            <div className="text-sm text-white/80">
-                              {t("lcrTitle")}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="bg-white/10 hover:bg-white/15 border border-white/10"
-                              onClick={() =>
-                                exportChartPng("chart-lcr", "lcr_vs_shock.png")
-                              }
-                              data-testid="export-lcr-png"
-                            >
-                              {t("exportPng")}
-                            </Button>
-                          </div>
-                          <div id="chart-lcr">
-                            <ResponsiveContainer width="100%" height={300}>
-                              <BarChart
-                                data={sortedResultsForCharts}
-                                barCategoryGap={24}
-                                margin={{ top: 8, right: 28, left: 28, bottom: 8 }}
+                          {/* ΔEVE / Equity */}
+                          <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="text-sm text-white/80">{t("eveVsShock")}</div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="bg-white/10 hover:bg-white/15 border border-white/10"
+                                onClick={() => exportChartPng("chart-eve", "eve_vs_shock.png")}
+                                data-testid="export-eve-png"
                               >
-                                <CartesianGrid stroke="rgba(255,255,255,0.16)" />
-                                <XAxis
-                                  dataKey="shock_bps"
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                />
-                                <YAxis
-                                  yAxisId="left"
-                                  width={88}
-                                  tickFormatter={fmtMoney}
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                />
-                                <YAxis
-                                  yAxisId="right"
-                                  width={56}
-                                  orientation="right"
-                                  tickFormatter={(v) => fmtX(Number(v))}
-                                  tick={{ fontSize: 12, fill: "#E5E7EB" }}
-                                  stroke="#6B7280"
-                                  tickMargin={8}
-                                  domain={[0, (dataMax: number) => Math.max(1.2, dataMax * 1.1)]}
-                                />
-                                <RechartTooltip
-                                  cursor={false}
-                                  contentStyle={{
-                                    background: "rgba(10,10,10,0.9)",
-                                    border: "1px solid rgba(255,255,255,0.25)",
-                                    borderRadius: 12,
-                                    color: "#F3F4F6",
-                                  }}
-                                  formatter={(val: any, _name: any, props: any) => {
-                                    const key = (props?.dataKey as string) || "";
-                                    if (key === "lcr_hqla" || key === "lcr_outflows") {
-                                      return fmtSignedMoney(Number(val));
-                                    }
-                                    if (key === "lcr_coverage") return signed(fmtX(Number(val)));
-                                    return val;
-                                  }}
-                                  labelFormatter={(l) => `Shock: ${l} bps`}
-                                />
-                                <Legend wrapperStyle={{ color: "#E5E7EB" }} />
-
-                                <Bar
-                                  yAxisId="left"
-                                  dataKey="lcr_hqla"
-                                  name="HQLA"
-                                  fill="rgba(52,211,153,0.55)"
-                                  stroke="#10B981"
-                                  barSize={18}
-                                  radius={[6, 6, 0, 0]}
-                                  isAnimationActive={!reducedMotion}
-                                />
-                                <Bar
-                                  yAxisId="left"
-                                  dataKey="lcr_outflows"
-                                  name="Outflows"
-                                  fill="rgba(248,113,113,0.55)"
-                                  stroke="#EF4444"
-                                  barSize={18}
-                                  radius={[6, 6, 0, 0]}
-                                  isAnimationActive={!reducedMotion}
-                                />
-
-                                <Line
-                                  yAxisId="right"
-                                  type="monotone"
-                                  dataKey="lcr_coverage"
-                                  name="Coverage (×)"
-                                  stroke="#93C5FD"
-                                  strokeWidth={2.4}
-                                  dot={{ r: 2 }}
-                                  isAnimationActive={!reducedMotion}
-                                  activeDot
-                                />
-                              </BarChart>
-                            </ResponsiveContainer>
+                                <ImageDown className="h-4 w-4 mr-1" />
+                                {t("exportPng")}
+                              </Button>
+                            </div>
+                            <div id="chart-eve">
+                              <ResponsiveContainer width="100%" height={260}>
+                                <AreaChart data={sortedResultsForCharts}>
+                                  <CartesianGrid stroke="rgba(255,255,255,0.18)" />
+                                  <XAxis dataKey="shock_bps" tick={{ fontSize: 12, fill: "#E5E7EB" }} stroke="#6B7280" tickMargin={8} />
+                                  <YAxis
+                                    tickFormatter={(v) => fmtPct((Number(v) || 0) * 100)}
+                                    tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                    stroke="#6B7280"
+                                    tickMargin={8}
+                                  />
+                                  <RechartTooltip
+                                    formatter={(val: any, name: any) => {
+                                      if (name === "ΔEVE/Equity") return fmtSignedPct((val as number) * 100, 1);
+                                      return val;
+                                    }}
+                                    labelFormatter={(l) => `Shock: ${l} bps`}
+                                    cursor={{ stroke: "rgba(255,255,255,0.35)", strokeWidth: 1 }}
+                                    contentStyle={{
+                                      background: "rgba(10,10,10,0.9)",
+                                      border: "1px solid rgba(255,255,255,0.25)",
+                                      borderRadius: 12,
+                                      color: "#F3F4F6",
+                                    }}
+                                  />
+                                  <Area
+                                    type="monotone"
+                                    dataKey="eve_pct_equity"
+                                    name="ΔEVE/Equity"
+                                    fill="rgba(96,165,250,0.35)"
+                                    stroke="#93C5FD"
+                                    strokeWidth={2.4}
+                                    isAnimationActive={!reducedMotion}
+                                    activeDot
+                                  />
+                                </AreaChart>
+                              </ResponsiveContainer>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Tabela */}
-                        <div className="overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
-                          <table className="min-w-full text-sm">
-                            <thead className="sticky top-0 bg-white/5 backdrop-blur z-10">
-                              <tr>
-                                <SortHeader col="shock_bps" label={t("tableShock")} />
-                                <SortHeader col="eve_change" label={t("tableEve")} />
-                                <SortHeader col="eve_pct_equity" label={t("tableEveEq")} />
-                                <SortHeader col="nii_delta" label={t("tableNii")} />
-                                <SortHeader col="lcr_hqla" label={t("tableHqla")} />
-                                <SortHeader col="lcr_outflows" label={t("tableOut")} />
-                                <SortHeader col="lcr_coverage" label={t("tableCov")} />
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tableSortedResults.map((r) => (
-                                <tr key={r.shock_bps} className="even:bg-white/[0.03]">
-                                  <td className="px-3 py-2 border-b border-white/10">{r.shock_bps}</td>
-                                  <td
-                                    className={`px-3 py-2 border-b border-white/10 ${
-                                      r.eve_change >= 0 ? "text-emerald-300" : "text-rose-300"
-                                    }`}
-                                  >
-                                    {fmtSignedMoney(r.eve_change)}
-                                  </td>
-                                  <td
-                                    className={`px-3 py-2 border-b border-white/10 ${
-                                      r.eve_pct_equity >= 0 ? "text-emerald-300" : "text-rose-300"
-                                    }`}
-                                  >
-                                    {fmtSignedPct(r.eve_pct_equity * 100)}
-                                  </td>
-                                  <td
-                                    className={`px-3 py-2 border-b border-white/10 ${
-                                      r.nii_delta >= 0 ? "text-emerald-300" : "text-rose-300"
-                                    }`}
-                                  >
-                                    {fmtSignedMoney(r.nii_delta)}
-                                  </td>
-                                  <td className="px-3 py-2 border-b border-white/10">
-                                    {fmtSignedMoney(r.lcr_hqla)}
-                                  </td>
-                                  <td className="px-3 py-2 border-b border-white/10">
-                                    {fmtSignedMoney(r.lcr_outflows)}
-                                  </td>
-                                  <td
-                                    className={`px-3 py-2 border-b border-white/10 ${
-                                      r.lcr_coverage >= 1 ? "text-emerald-300" : "text-rose-300"
-                                    }`}
-                                  >
-                                    {signed(fmtX(r.lcr_coverage))}
-                                  </td>
+                          {/* ΔNII (12m) */}
+                          <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="text-sm text-white/80">{t("niiVsShock")}</div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="bg-white/10 hover:bg-white/15 border border-white/10"
+                                onClick={() => exportChartPng("chart-nii", "nii_vs_shock.png")}
+                                data-testid="export-nii-png"
+                              >
+                                <ImageDown className="h-4 w-4 mr-1" />
+                                {t("exportPng")}
+                              </Button>
+                            </div>
+                            <div id="chart-nii">
+                              <ResponsiveContainer width="100%" height={260}>
+                                <LineChart data={sortedResultsForCharts}>
+                                  <CartesianGrid stroke="rgba(255,255,255,0.16)" />
+                                  <XAxis dataKey="shock_bps" tick={{ fontSize: 12, fill: "#E5E7EB" }} stroke="#6B7280" tickMargin={8} />
+                                  <YAxis
+                                    width={88}                           // ← mais espaço para os ticks
+                                    tickFormatter={(v) => fmtMoneyCompact(Number(v))}
+                                    tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                    stroke="#6B7280"
+                                    tickMargin={8}
+                                  />
+                                  <RechartTooltip
+                                    formatter={(val: any, name: any) =>
+                                      name === "ΔNII (12m)" ? fmtSignedMoney(Number(val)) : val
+                                    }
+                                    labelFormatter={(l) => `Shock: ${l} bps`}
+                                    contentStyle={{
+                                      background: "rgba(10,10,10,0.9)",
+                                      border: "1px solid rgba(255,255,255,0.25)",
+                                      borderRadius: 12,
+                                      color: "#F3F4F6",
+                                    }}
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="nii_delta"
+                                    name="ΔNII (12m)"
+                                    stroke="#34D399"
+                                    strokeWidth={2.4}
+                                    dot={{ r: 2 }}
+                                    isAnimationActive={!reducedMotion}
+                                    activeDot
+                                  />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* LCR */}
+                          <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="text-sm text-white/80">{t("lcrTitle")}</div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="bg-white/10 hover:bg-white/15 border border-white/10"
+                                onClick={() => exportChartPng("chart-lcr", "lcr_vs_shock.png")}
+                                data-testid="export-lcr-png"
+                              >
+                                <ImageDown className="h-4 w-4 mr-1" />
+                                {t("exportPng")}
+                              </Button>
+                            </div>
+                            <div id="chart-lcr">
+                              <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={sortedResultsForCharts} barCategoryGap={24} margin={{ top: 8, right: 28, left: 28, bottom: 8 }}>
+                                  <CartesianGrid stroke="rgba(255,255,255,0.16)" />
+                                  <XAxis dataKey="shock_bps" tick={{ fontSize: 12, fill: "#E5E7EB" }} stroke="#6B7280" tickMargin={8} />
+                                  <YAxis yAxisId="left" width={88} tickFormatter={fmtMoney} tick={{ fontSize: 12, fill: "#E5E7EB" }} stroke="#6B7280" tickMargin={8} />
+                                  <YAxis
+                                    yAxisId="right"
+                                    width={56}
+                                    orientation="right"
+                                    tickFormatter={(v) => fmtX(Number(v))}
+                                    tick={{ fontSize: 12, fill: "#E5E7EB" }}
+                                    stroke="#6B7280"
+                                    tickMargin={8}
+                                    domain={[0, (dataMax: number) => Math.max(1.2, dataMax * 1.1)]}
+                                  />
+                                  <RechartTooltip
+                                    cursor={false}
+                                    contentStyle={{
+                                      background: "rgba(10,10,10,0.9)",
+                                      border: "1px solid rgba(255,255,255,0.25)",
+                                      borderRadius: 12,
+                                      color: "#F3F4F6",
+                                    }}
+                                    formatter={(val: any, _name: any, props: any) => {
+                                      const key = (props?.dataKey as string) || "";
+                                      if (key === "lcr_hqla" || key === "lcr_outflows") return fmtSignedMoney(Number(val));
+                                      if (key === "lcr_coverage") return signed(fmtX(Number(val)));
+                                      return val;
+                                    }}
+                                    labelFormatter={(l) => `Shock: ${l} bps`}
+                                  />
+                                  <Legend wrapperStyle={{ color: "#E5E7EB" }} />
+
+                                  <Bar yAxisId="left" dataKey="lcr_hqla" name="HQLA" fill="rgba(52,211,153,0.55)" stroke="#10B981" barSize={18} radius={[6, 6, 0, 0]} isAnimationActive={!reducedMotion} />
+                                  <Bar yAxisId="left" dataKey="lcr_outflows" name="Outflows" fill="rgba(248,113,113,0.55)" stroke="#EF4444" barSize={18} radius={[6, 6, 0, 0]} isAnimationActive={!reducedMotion} />
+                                  <Line yAxisId="right" type="monotone" dataKey="lcr_coverage" name="Coverage (×)" stroke="#93C5FD" strokeWidth={2.4} dot={{ r: 2 }} isAnimationActive={!reducedMotion} activeDot />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Table */}
+                          <div className="overflow-auto rounded-xl border border-white/10 bg-white/5 backdrop-blur">
+                            <table className="min-w-full text-sm">
+                              <thead className="sticky top-0 bg-white/5 backdrop-blur z-10">
+                                <tr>
+                                  <SortHeader col="shock_bps" label={t("tableShock")} />
+                                  <SortHeader col="eve_change" label={t("tableEve")} />
+                                  <SortHeader col="eve_pct_equity" label={t("tableEveEq")} />
+                                  <SortHeader col="nii_delta" label={t("tableNii")} />
+                                  <SortHeader col="lcr_hqla" label={t("tableHqla")} />
+                                  <SortHeader col="lcr_outflows" label={t("tableOut")} />
+                                  <SortHeader col="lcr_coverage" label={t("tableCov")} />
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                              </thead>
+                              <tbody>
+                                {tableSortedResults.map((r) => (
+                                  <tr key={r.shock_bps} className="even:bg-white/[0.03]">
+                                    <td className="px-3 py-2 border-b border-white/10">{r.shock_bps}</td>
+                                    <td className={`px-3 py-2 border-b border-white/10 ${r.eve_change >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {fmtSignedMoney(r.eve_change)}
+                                    </td>
+                                    <td className={`px-3 py-2 border-b border-white/10 ${r.eve_pct_equity >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {fmtSignedPct(r.eve_pct_equity * 100)}
+                                    </td>
+                                    <td className={`px-3 py-2 border-b border-white/10 ${r.nii_delta >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {fmtSignedMoney(r.nii_delta)}
+                                    </td>
+                                    <td className="px-3 py-2 border-b border-white/10">{fmtSignedMoney(r.lcr_hqla)}</td>
+                                    <td className="px-3 py-2 border-b border-white/10">{fmtSignedMoney(r.lcr_outflows)}</td>
+                                    <td className={`px-3 py-2 border-b border-white/10 ${r.lcr_coverage >= 1 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {signed(fmtX(r.lcr_coverage))}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
 
-                        {/* Export buttons */}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Button
-                            variant="secondary"
-                            className="bg-white/10 hover:bg-white/15 border border-white/10"
-                            onClick={exportResultsCsv}
-                            disabled={results.length === 0}
-                            data-testid="export-csv-btn-bottom"
-                          >
-                            {t("exportCsv")}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            className="bg-white/10 hover:bg-white/15 border border-white/10"
-                            onClick={exportResultsJson}
-                            disabled={results.length === 0}
-                            data-testid="export-json-btn-bottom"
-                          >
-                            {t("exportJson")}
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </main>
+                          {/* Exportar buttons */}
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button
+                              variant="secondary"
+                              className="bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={exportResultsCsv}
+                              disabled={results.length === 0}
+                              data-testid="export-csv-btn-bottom"
+                            >
+                              <Download className="h-4 w-4 mr-1.5" />
+                              {t("exportCsv")}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              className="bg-white/10 hover:bg-white/15 border border-white/10"
+                              onClick={exportResultsJson}
+                              disabled={results.length === 0}
+                              data-testid="export-json-btn-bottom"
+                            >
+                              <FileJson className="h-4 w-4 mr-1.5" />
+                              {t("exportJson")}
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </main>
+            </div>
           </div>
-        </div>
 
-        {/* Schema modal */}
-        {schemaOpen && (
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="schema-title"
-          >
-            <div
-              className="absolute inset-0 bg-black/60"
-              onClick={() => {
-                setSchemaOpen(false);
-                schemaBtnRef.current?.focus();
-              }}
-            />
-            <SchemaModalContent
-              panelClass={PANEL}
-              onClose={() => {
-                setSchemaOpen(false);
-                schemaBtnRef.current?.focus();
-              }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3
-                  id="schema-title"
-                  className="text-[20px] leading-[24px] font-medium"
-                >
-                  {t("expectedSchema")}
-                </h3>
-                <button
-                  onClick={() => {
-                    setSchemaOpen(false);
-                    schemaBtnRef.current?.focus();
-                  }}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm hover:bg-white/10"
-                  aria-label={t("close")}
-                >
-                  {t("close")}
-                </button>
-              </div>
-              <div className="space-y-4 text-sm">
-                <div>
-                  <div className="text-white/80 mb-1">{t("required")}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {REQUIRED_COLS.map((c) => (
-                      <span
-                        key={c}
-                        className={`rounded-full border px-2 py-1 text-[11px] ${
-                          headers.includes(c) || mappedHeaders.includes(c)
-                            ? "bg-emerald-500/25 text-emerald-200 border-emerald-600"
-                            : "bg-red-500/25 text-red-200 border-red-600"
-                        }`}
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-white/80 mb-1">{t("optional")}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {OPTIONAL_COLS.map((c) => (
-                      <span
-                        key={c}
-                        className={`rounded-full border px-2 py-1 text-[11px] ${
-                          headers.includes(c) || mappedHeaders.includes(c)
-                            ? "bg-white/10 text-white/90 border-white/20"
-                            : "bg-black/20 text-white/60 border-white/10"
-                        }`}
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="text-xs text-white/70">
-                  Tip: {t("sampleCsv")}
-                </div>
-              </div>
-            </SchemaModalContent>
-          </div>
-        )}
-
-        {/* Preview CSV modal */}
-        {previewOpen && (
-          <div
-            id="preview-dialog"
-            className="fixed inset-0 z-[60] flex items-center justify-center"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="preview-title"
-          >
-            <div
-              className="absolute inset-0 bg-black/60"
-              onClick={() => {
-                setPreviewOpen(false);
-                previewBtnRef.current?.focus();
-              }}
-            />
-            <SchemaModalContent
-              panelClass={PANEL}
-              onClose={() => {
-                setPreviewOpen(false);
-                previewBtnRef.current?.focus();
-              }}
-            >
-              <div className="mb-3 gap-2 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                <h3
-                  id="preview-title"
-                  className="text-[20px] leading-[24px] font-medium"
-                >
-                  {t("previewDialog", {
-                    f: previewRowsFiltered.length,
-                    t: rows.length,
-                  })}
-                </h3>
-
-                {/* Toolbar */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    id="preview-search"
-                    type="text"
-                    placeholder={t("search")}
-                    value={previewQuery}
-                    onChange={(e) => setPreviewQuery(e.target.value)}
-                    className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-sm placeholder-white/50 focus:outline-none focus:border-white/20"
-                    aria-label={t("search")}
-                    data-testid="preview-search"
-                  />
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={compactRows}
-                      onChange={(e) => setCompactRows(e.target.checked)}
-                      className={CHECKBOX}
-                      aria-label={t("compact")}
-                      data-testid="compact-checkbox"
-                    />
-                    {t("compact")}
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    {t("pageSize")}
-                    <select
-                      value={pageSize}
-                      onChange={(e) => setPageSize(Number(e.target.value))}
-                      className="h-9 rounded-lg border border-white/10 bg-white/5 px-2 text-sm focus:outline-none"
-                      aria-label={t("pageSize")}
-                      data-testid="page-size-select"
-                    >
-                      {[100, 200, 500, 1000].map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button
-                    variant="secondary"
-                    onClick={copyPreviewCsv}
-                    className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
-                    data-testid="copy-page-btn"
-                  >
-                    {t("copyPage")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={downloadPreviewCsv}
-                    className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
-                    data-testid="download-filtered-btn"
-                  >
-                    {t("downloadFiltered")}
-                  </Button>
+          {/* Schema modal */}
+          {schemaOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="schema-title">
+              <div
+                className="absolute inset-0 bg-black/60"
+                onClick={() => {
+                  setSchemaOpen(false);
+                  schemaBtnRef.current?.focus();
+                }}
+              />
+              <SchemaModalContent
+                panelClass={PANEL}
+                onClose={() => {
+                  setSchemaOpen(false);
+                  schemaBtnRef.current?.focus();
+                }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3 id="schema-title" className="text-[20px] leading-[24px] font-medium">
+                    {t("expectedSchema")}
+                  </h3>
                   <Button
                     onClick={() => {
-                      setPreviewOpen(false);
-                      previewBtnRef.current?.focus();
+                      setSchemaOpen(false);
+                      schemaBtnRef.current?.focus();
                     }}
+                    variant="secondary"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm hover:bg-white/10"
                     aria-label={t("close")}
-                    data-testid="close-preview-btn"
                   >
+                    <XIcon className="h-4 w-4 mr-1" />
                     {t("close")}
                   </Button>
                 </div>
-              </div>
-
-              {/* Pagination */}
-              <div className="flex flex-wrap items-center justify-between mb-2 text-xs text-white/80 gap-2">
-                <div>
-                  {t("pageOf", {
-                    p: page,
-                    tp: totalPages,
-                    n: pageSlice.length,
-                    nf: previewRowsFiltered.length,
-                  })}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                    onClick={() => setPage(1)}
-                    disabled={page === 1}
-                    title={t("first")}
-                    data-testid="first-page-btn"
-                  >
-                    {t("first")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    title={t("prev")}
-                    data-testid="prev-page-btn"
-                  >
-                    {t("prev")}
-                  </Button>
-                  <div
-                    className="text-xs text-white/80"
-                    data-testid="page-indicator"
-                    aria-live="polite"
-                  >
-                    {page} / {totalPages}
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <div className="text-white/80 mb-1">{t("required")}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {REQUIRED_COLS.map((c) => (
+                        <span
+                          key={c}
+                          className={`rounded-full border px-2 py-1 text-[11px] ${headers.includes(c) || mappedHeaders.includes(c)
+                            ? "bg-emerald-500/25 text-emerald-200 border-emerald-600"
+                            : "bg-red-500/25 text-red-200 border-red-600"}`}
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <Button
-                    variant="secondary"
-                    className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    title={t("next")}
-                    data-testid="next-page-btn"
-                  >
-                    {t("next")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
-                    onClick={() => setPage(totalPages)}
-                    disabled={page === totalPages}
-                    title={t("last")}
-                    data-testid="last-page-btn"
-                  >
-                    {t("last")}
-                  </Button>
-                  <label className="flex items-center gap-1">
-                    {t("goto")}
-                    <input
-                      id="goto-input"
-                      type="number"
-                      min={1}
-                      max={totalPages}
-                      className="h-8 w-20 rounded-md border border-white/10 bg-white/5 px-2 text-xs"
-                      aria-label={t("gotoPage")}
-                      data-testid="goto-input"
-                    />
-                  </label>
-                  <Button
-                    variant="secondary"
-                    className="h-8 bg-white/10 hover:bg-white/15 border border-white/10"
-                    onClick={() => {
-                      const el = document.getElementById(
-                        "goto-input"
-                      ) as HTMLInputElement | null;
-                      const v = Number(el?.value || "");
-                      if (!Number.isNaN(v))
-                        setPage(Math.min(Math.max(1, v), totalPages));
-                    }}
-                    data-testid="goto-btn"
-                  >
-                    {t("goto")}
-                  </Button>
+                  <div>
+                    <div className="text-white/80 mb-1">{t("optional")}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {OPTIONAL_COLS.map((c) => (
+                        <span
+                          key={c}
+                          className={`rounded-full border px-2 py-1 text-[11px] ${headers.includes(c) || mappedHeaders.includes(c)
+                            ? "bg-white/10 text-white/90 border-white/20"
+                            : "bg-black/20 text-white/60 border-white/10"}`}
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-xs text-white/70">Tip: {t("sampleCsv")}</div>
                 </div>
-              </div>
+              </SchemaModalContent>
+            </div>
+          )}
 
-              {/* Virtualized table */}
-              <VirtualizedPreviewTable
-                headers={headers.length ? headers : Object.keys(pageSlice[0] || {})}
-                rows={pageSlice}
-                query={debouncedQuery}
-                compact={compactRows}
-                parsing={parsing}
+          {/* Preview csv modal */}
+          {previewOpen && (
+            <div id="preview-dialog" className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+              <div
+                className="absolute inset-0 bg-black/60"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  previewBtnRef.current?.focus();
+                }}
               />
+              <SchemaModalContent
+                panelClass={PANEL}
+                onClose={() => {
+                  setPreviewOpen(false);
+                  previewBtnRef.current?.focus();
+                }}
+              >
+                <div className="mb-3 gap-2 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                  <h3 id="preview-title" className="text-[20px] leading-[24px] font-medium">
+                    {t("previewDialog", { f: previewRowsFiltered.length, t: rows.length })}
+                  </h3>
 
-              {/* Estado “sem resultados” */}
-              {debouncedQuery && previewRowsFiltered.length === 0 && !parsing && (
-                <div className="mt-3 text-center text-sm text-white/80" data-testid="no-results">
-                  {t("noResults", { q: previewQuery })}
+                  {/* barra */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="h-4 w-4 absolute left-2 top-1/2 -translate-y-1/2 opacity-70" />
+                      <input
+                        id="preview-search"
+                        type="text"
+                        placeholder={t("search")}
+                        value={previewQuery}
+                        onChange={(e) => setPreviewQuery(e.target.value)}
+                        className="h-9 rounded-lg border border-white/10 bg-white/5 pl-8 pr-3 text-sm placeholder-white/50 focus:outline-none focus:border-white/20"
+                        aria-label={t("search")}
+                        data-testid="preview-search"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={compactRows}
+                        onChange={(e) => setCompactRows(e.target.checked)}
+                        className={CHECKBOX}
+                        aria-label={t("compact")}
+                        data-testid="compact-checkbox"
+                      />
+                      {t("compact")}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      {t("pageSize")}
+                      <select
+                        value={pageSize}
+                        onChange={(e) => setPageSize(Number(e.target.value))}
+                        className="h-9 rounded-lg border border-white/10 bg-white/5 px-2 text-sm focus:outline-none"
+                        aria-label={t("pageSize")}
+                        data-testid="page-size-select"
+                      >
+                        {[100, 200, 500, 1000].map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <Button
+                      variant="secondary"
+                      onClick={copyPreviewCsv}
+                      className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
+                      data-testid="copy-page-btn"
+                    >
+                      <Download className="h-4 w-4 mr-1.5" />
+                      {t("copyPage")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={downloadPreviewCsv}
+                      className="h-9 bg-white/10 hover:bg-white/15 border border-white/10"
+                      data-testid="download-filtered-btn"
+                    >
+                      <Download className="h-4 w-4 mr-1.5" />
+                      {t("downloadFiltered")}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setPreviewOpen(false);
+                        previewBtnRef.current?.focus();
+                      }}
+                      aria-label={t("close")}
+                      data-testid="close-preview-btn"
+                    >
+                      <XIcon className="h-4 w-4 mr-1" />
+                      {t("close")}
+                    </Button>
+                  </div>
                 </div>
-              )}
-            </SchemaModalContent>
-          </div>
-        )}
-      </div>
-    </UiTooltipProvider>
+
+                {/* Pagination */}
+                <div className="flex flex-wrap items-center justify-between mb-2 text-xs text-white/80 gap-2">
+                  <div>
+                    {t("pageOf", {
+                      p: page,
+                      tp: totalPages,
+                      n: pageSlice.length,
+                      nf: previewRowsFiltered.length,
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                      onClick={() => setPage(1)}
+                      disabled={page === 1}
+                      title={t("first")}
+                      data-testid="first-page-btn"
+                    >
+                      <ChevronsLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      title={t("prev")}
+                      data-testid="prev-page-btn"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="text-xs text-white/80" data-testid="page-indicator" aria-live="polite">
+                      {page} / {totalPages}
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      title={t("next")}
+                      data-testid="next-page-btn"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1 h-8"
+                      onClick={() => setPage(totalPages)}
+                      disabled={page === totalPages}
+                      title={t("last")}
+                      data-testid="last-page-btn"
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </Button>
+                    <label className="flex items-center gap-1">
+                      {t("goto")}
+                      <input
+                        id="goto-input"
+                        type="number"
+                        min={1}
+                        max={totalPages}
+                        className="h-8 w-20 rounded-md border border-white/10 bg-white/5 px-2 text-xs"
+                        aria-label={t("gotoPage")}
+                        data-testid="goto-input"
+                      />
+                    </label>
+                    <Button
+                      variant="secondary"
+                      className="h-8 bg-white/10 hover:bg-white/15 border border-white/10"
+                      onClick={() => {
+                        const el = document.getElementById("goto-input") as HTMLInputElement | null;
+                        const v = Number(el?.value || "");
+                        if (!Number.isNaN(v)) setPage(Math.min(Math.max(1, v), totalPages));
+                      }}
+                      data-testid="goto-btn"
+                    >
+                      {t("goto")}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Virtualized table */}
+                <VirtualizedPreviewTable
+                  headers={headers.length ? headers : Object.keys(pageSlice[0] || {})}
+                  rows={pageSlice}
+                  query={debouncedQuery}
+                  compact={compactRows}
+                  parsing={parsing}
+                />
+
+                {/* No results */}
+                {debouncedQuery && previewRowsFiltered.length === 0 && !parsing && (
+                  <div className="mt-3 text-center text-sm text-white/80" data-testid="no-results">
+                    {t("noResults", { q: previewQuery })}
+                  </div>
+                )}
+              </SchemaModalContent>
+            </div>
+          )}
+
+          {/* Toast */}
+          {toast && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`fixed bottom-4 right-4 z-[70] rounded-xl px-3 py-2 text-sm shadow-lg backdrop-blur border
+                ${toast.type === "ok" ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-100" : "bg-red-500/20 border-red-400/40 text-red-100"}`}
+            >
+              {toast.msg}
+            </div>
+          )}
+        </div>
+      </UiTooltipProvider>
+    </AnimatedPageWrapper>
   );
 }
 
-/* ==================== Background ==================== */
-function BackgroundGlow() {
-  return (
-    <>
-      <div className="fixed inset-0 -z-50 bg-neutral-950" />
-      <div
-        className="pointer-events-none fixed inset-0 -z-40"
-        style={{
-          background: `
-            radial-gradient(1200px 800px at 50% 15%, rgba(59,130,246,0.12), transparent 70%),
-            radial-gradient(1000px 700px at 25% 75%, rgba(96,165,250,0.10), transparent 75%),
-            radial-gradient(900px 600px at 75% 70%, rgba(37,99,235,0.09), transparent 75%),
-            radial-gradient(800px 500px at 15% 40%, rgba(147,197,253,0.08), transparent 70%),
-            radial-gradient(700px 500px at 85% 30%, rgba(29,78,216,0.07), transparent 70%)
-          `,
-        }}
-      />
-    </>
-  );
-}
-
-/* ---------- Modal content helper ---------- */
 function SchemaModalContent({
   panelClass,
   onClose,
@@ -2529,29 +2172,16 @@ function SchemaModalContent({
     (focusables[0] ?? root).focus();
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
+      if (e.key === "Escape") { e.preventDefault(); onClose(); }
       if (e.key === "Tab") {
-        const list = Array.from(getFocusables()).filter(
-          (el) => !el.hasAttribute("disabled")
-        );
+        const list = Array.from(getFocusables()).filter((el) => !el.hasAttribute("disabled"));
         if (!list.length) return;
-        const first = list[0];
-        const last = list[list.length - 1];
+        const first = list[0]; const last = list[list.length - 1];
         const active = document.activeElement as HTMLElement | null;
-
         if (e.shiftKey) {
-          if (active === first || !root.contains(active)) {
-            e.preventDefault();
-            last.focus();
-          }
+          if (active === first || !root.contains(active)) { e.preventDefault(); last.focus(); }
         } else {
-          if (active === last || !root.contains(active)) {
-            e.preventDefault();
-            first.focus();
-          }
+          if (active === last || !root.contains(active)) { e.preventDefault(); first.focus(); }
         }
       }
     };
@@ -2572,7 +2202,6 @@ function SchemaModalContent({
   );
 }
 
-/* ==================== Virtualized Preview Table ==================== */
 function VirtualizedPreviewTable({
   headers,
   rows,
@@ -2590,7 +2219,7 @@ function VirtualizedPreviewTable({
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
 
-  const ROW_H = compact ? 28 : 36; // altura aproximada por linha
+  const ROW_H = compact ? 28 : 36;
   const OVERSCAN = 10;
 
   useEffect(() => {
@@ -2634,7 +2263,6 @@ function VirtualizedPreviewTable({
         </thead>
       </table>
 
-      {/* Skeleton enquanto a viewport mede / parsing */}
       {parsing && (
         <div className="p-3 space-y-2">
           {Array.from({ length: 10 }).map((_, i) => (
@@ -2644,21 +2272,18 @@ function VirtualizedPreviewTable({
       )}
 
       {!parsing && <div style={{ height: topPad }} aria-hidden />}
-
       {!parsing && (
         <table className="min-w-full text-sm">
           <tbody>
             {slice.map((r, i) => (
-              <tr key={startIndex + i} className={`even:bg-white/[0.03]`}>
+              <tr key={startIndex + i} className="even:bg-white/[0.03]">
                 {headers.map((h) => (
                   <td
                     key={h}
                     className={`px-3 ${compact ? "py-1.5" : "py-2"} border-b border-white/10`}
                     style={{ height: ROW_H }}
                   >
-                    {query
-                      ? highlightMatch(String((r as any)[h] ?? ""), query)
-                      : String((r as any)[h] ?? "")}
+                    {query ? highlightMatch(String((r as any)[h] ?? ""), query) : String((r as any)[h] ?? "")}
                   </td>
                 ))}
               </tr>
@@ -2666,7 +2291,6 @@ function VirtualizedPreviewTable({
           </tbody>
         </table>
       )}
-
       {!parsing && <div style={{ height: bottomPad }} aria-hidden />}
     </div>
   );

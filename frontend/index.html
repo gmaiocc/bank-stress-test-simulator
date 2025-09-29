@@ -2,12 +2,41 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Bank Stress Test Simulator</title>
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta
+      name="description"
+      content="Bank Stress Test Simulator — upload your CSV balance sheet and simulate interest rate & liquidity shocks. Get ΔEVE, ΔNII, LCR with exportable charts and reports."
+    />
+    <meta
+      name="keywords"
+      content="bank stress test, interest rate risk, liquidity risk, ΔEVE, ΔNII, LCR, balance sheet, simulator, CSV"
+    />
+    <meta name="author" content="Bank Stress Test Simulator Team" />
+
+    <meta property="og:title" content="Bank Stress Test Simulator" />
+    <meta
+      property="og:description"
+      content="Upload a CSV and simulate interest rate shocks. See ΔEVE, ΔNII and liquidity in seconds."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/social-preview.png" />
+    <meta property="og:url" content="https://yourdomain.com/" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Bank Stress Test Simulator" />
+    <meta
+      name="twitter:description"
+      content="Stress test your bank balance sheet with CSVs. Get ΔEVE, ΔNII, LCR instantly."
+    />
+    <meta name="twitter:image" content="/social-preview.png" />
   </head>
-  <body>
+
+  <body class="bg-neutral-950 text-white">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/routes/main.tsx"></script>
   </body>
 </html>

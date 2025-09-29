@@ -1,26 +1,36 @@
 # Bank Stress-Test Simulator
+**Version 1.0.0**
 
 A minimal, educational simulator for bank balance-sheet stress testing.  
 It estimates **EVE (Economic Value of Equity)** under interest-rate shocks, a simple **12-month NII** projection, and a basic **liquidity coverage** check (HQLA vs deposit outflows).
 
 ---
 
-## Features
-- Parallel interest rate shocks (customizable, e.g. -200 to +200 bps)
-- Duration-based ΔEVE (Economic Value of Equity)
-- 12-month NII with floating-rate shares and deposit betas (core vs noncore)
-- Liquidity proxy: HQLA (Cash + AFS with haircut) vs stressed deposit outflows
-- React frontend with CSV upload, schema validation, charts, and export
+## Demo Preview  
+
+![Demo GIF](./frontend/public/gifs/gifbankstresstest.gif)  
+*Example of the simulator running with sample data.*
 
 ---
 
-## Current Version
-**v0.3.1** – working API + React UI with charts and CSV export.  
-Next steps: convexity, non-parallel shocks, repricing buckets for NII, more advanced liquidity ratios.
+## Features
+
+- **CSV upload** with auto-delimiter detection  
+- **Schema validation** with error reporting and exportable reports  
+- **Configurable parameters** (AFS haircut, deposit runoff, betas, shocks)  
+- **Metrics:**  
+  - ΔEVE / Equity  
+  - ΔNII (12m)  
+  - Liquidity (HQLA, outflows, coverage)  
+- **Interactive charts** with export to PNG  
+- **Table view** with filtering, sorting, pagination, and CSV/JSON export  
+- **Built-in sample datasets** (`small.csv`, `medium.csv`, `large.csv`) for quick testing  
+- **Bilingual UI** (EN/PT) with automatic detection and toggle  
 
 ---
 
 ## How It Works
+
 1. **Upload CSV** with balance sheet items (assets, liabilities, equity).  
    Required columns:  
    `type, name, amount, rate, duration, category, fixed_float, float_share, repricing_bucket`  
@@ -30,7 +40,17 @@ Next steps: convexity, non-parallel shocks, repricing buckets for NII, more adva
 
 ---
 
-## How to Run
+## Tech Stack  
+
+- **Frontend:** React + TypeScript + Vite + TailwindCSS + Framer Motion  
+- **Backend:** FastAPI + Pandas  
+- **Charts:** Recharts  
+- **Validation:** Zod + Papaparse  
+- **UI Components:** shadcn/ui + Lucide icons  
+
+---
+
+## How to Run Locally
 
 ### Backend (FastAPI)
 ```bash
@@ -45,16 +65,4 @@ cd frontend
 npm install
 npm run dev
 # Open http://localhost:5173
-```
-
----
-
-## Example CSV
-```bash
-type,name,amount,rate,duration,category,fixed_float,float_share,repricing_bucket,stability
-asset,Loans,120000000,0.06,3,HTM,fixed,0.4,3-12m,
-asset,AFS_Bonds,60000000,0.04,5,AFS,fixed,0.0,>3y,
-asset,Cash,20000000,0.02,0.1,HQLA,float,1.0,0-1m,
-liability,Deposits,170000000,0.01,1.5,DEPOSITS,float,1.0,0-1m,core
-equity,Equity,15000000,0,0,EQUITY,fixed,0.0,>3y,
 ```
