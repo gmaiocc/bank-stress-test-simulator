@@ -6,12 +6,15 @@ from typing import List, Dict
 import os
 import pandas as pd
 from io import StringIO
-
 from src.eve import eve_change
 from src.nii import project_nii_12m
 
-APP_VERSION = "1.0.0"
 MAX_CSV_MB = float(os.getenv("MAX_CSV_MB", "10"))
+
+FRONTEND_ORIGINS = [
+    "http://localhost:5173",
+    "https://bank-stress-test-simulator.vercel.app",  
+]
 
 def _allowed_origins() -> list[str]:
     env = os.getenv("ALLOWED_ORIGINS", "")
@@ -19,14 +22,14 @@ def _allowed_origins() -> list[str]:
         return [o.strip() for o in env.split(",") if o.strip()]
     return ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-app = FastAPI(title="Bank Stress Test API", version=APP_VERSION)
+app = FastAPI(title="Bank Stress Test API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed_origins(),
-    allow_credentials=True,
+    allow_origins=FRONTEND_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=False,  
 )
 
 @app.get("/")
