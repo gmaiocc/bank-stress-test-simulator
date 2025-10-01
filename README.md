@@ -66,3 +66,10 @@ npm install
 npm run dev
 # Open http://localhost:5173
 ```
+
+---
+
+## Credits / Acknowledgements
+
+- Developed by [Gonçalo Maio](https://www.linkedin.com/in/gonçalo-maio-3663a6257/) as part of an academic and professional learning project.
+- Inspired by real-world stress testing frameworks (EBA, Basel Committee, Fed DFAST/CCAR guidelines).
