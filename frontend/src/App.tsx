@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import { z } from "zod";

@@ -87,7 +87,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Feature grid */}
       <section className="container max-w-6xl mx-auto pb-8">
         <div className="grid md:grid-cols-3 gap-4">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
