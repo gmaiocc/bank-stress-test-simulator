@@ -321,7 +321,7 @@ function useReducedMotion() {
 const PANEL =
   "rounded-2xl border border-white/5 bg-white/3 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
 const FIELD_BASE =
-  "h-10 w-full rounded-xl border border-white/5 bg-white/3 backdrop-blur-sm px-3 text-sm placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:border-sky-300/30";
+  "h-10 w-full rounded-xl border border-white/5 bg-white/3 backdrop-blur-sm px-3 text-sm placeholder-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:border-sky-300/30 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed";
 const FIELD_NUMBER = `${FIELD_BASE} [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`;
 const FIELD = FIELD_BASE;
 const SELECT_FIELD = `${FIELD_BASE} pr-9 appearance-none cursor-pointer`;
@@ -685,7 +685,7 @@ export default function App() {
   const firstRenderStartRef = useRef<number | null>(null);
   const [firstRenderMs, setFirstRenderMs] = useState<number | null>(null);
 
-
+  const [useCustomBetas, setUseCustomBetas] = useState(false);
 
   useEffect(() => {
     try {
@@ -943,6 +943,7 @@ export default function App() {
               deposit_runoff: depositRunoff,
               deposit_beta_core: betaCore,
               deposit_beta_noncore: betaNoncore,
+              deposit_beta_mode: useCustomBetas ? "panel" : "csv",
               lag_months: 1,
             },
           }),
@@ -1332,8 +1333,18 @@ export default function App() {
                         />
                       </label>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="text-sm block">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={useCustomBetas}
+                          onChange={(e) => setUseCustomBetas(e.target.checked)}
+                          className={CHECKBOX}
+                        />
+                        Use custom beta values (override CSV)
+                      </label>
+
+                      <div className="grid grid-cols-2 gap-3 opacity-90">
+                        <label className={`text-sm block ${!useCustomBetas ? "opacity-70" : ""}`}>
                           {t("betaCore")}
                           <input
                             type="number"
@@ -1343,10 +1354,12 @@ export default function App() {
                             value={betaCore}
                             onChange={(e) => setBetaCore(Number(e.target.value))}
                             className={FIELD_NUMBER}
-                            aria-label={t("betaCore")}
+                            disabled={!useCustomBetas}            
+                            aria-disabled={!useCustomBetas}
                           />
                         </label>
-                        <label className="text-sm block">
+
+                        <label className={`text-sm block ${!useCustomBetas ? "opacity-70" : ""}`}>
                           {t("betaNoncore")}
                           <input
                             type="number"
@@ -1356,7 +1369,8 @@ export default function App() {
                             value={betaNoncore}
                             onChange={(e) => setBetaNoncore(Number(e.target.value))}
                             className={FIELD_NUMBER}
-                            aria-label={t("betaNoncore")}
+                            disabled={!useCustomBetas}
+                            aria-disabled={!useCustomBetas}
                           />
                         </label>
                       </div>
@@ -1708,7 +1722,7 @@ export default function App() {
                                   <CartesianGrid stroke="rgba(255,255,255,0.16)" />
                                   <XAxis dataKey="shock_bps" tick={{ fontSize: 12, fill: "#E5E7EB" }} stroke="#6B7280" tickMargin={8} />
                                   <YAxis
-                                    width={88}                           // ← mais espaço para os ticks
+                                    width={88}                        
                                     tickFormatter={(v) => fmtMoneyCompact(Number(v))}
                                     tick={{ fontSize: 12, fill: "#E5E7EB" }}
                                     stroke="#6B7280"

@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List, Dict, Literal
 import os
 import pandas as pd
 from io import StringIO
@@ -46,6 +46,7 @@ class StressParams(BaseModel):
     deposit_runoff: float = Field(default=0.15, ge=0.0, le=1.0)
     deposit_beta_core: float = Field(default=0.30, ge=0.0, le=1.0)
     deposit_beta_noncore: float = Field(default=0.60, ge=0.0, le=1.0)
+    deposit_beta_mode: Literal["csv", "panel"] = "csv"
     lag_months: int = Field(default=1, ge=0, le=12)
 
 class StressRequest(BaseModel):
@@ -148,8 +149,11 @@ def run_stress(req: StressRequest):
 
     def _row_beta(row):
         if row["is_deposit"]:
-            return req.params.deposit_beta_core if row["stability"] == "core" else req.params.deposit_beta_noncore
-        return row["deposit_beta"]
+            if req.params.deposit_beta_mode == "panel":
+                return req.params.deposit_beta_core if row["stability"] == "core" else req.params.deposit_beta_noncore
+            else:
+                return float(row.get("deposit_beta", 0.0))
+        return float(row.get("deposit_beta", 0.0))
 
     df["deposit_beta_eff"] = df.apply(_row_beta, axis=1)
 
