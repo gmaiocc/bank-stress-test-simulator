@@ -1,21 +1,21 @@
 import pandas as pd
+from typing import Dict
 
-def simple_liquidity_stress(df: pd.DataFrame, deposit_runoff: float = 0.15) -> dict:
-    # HQLA proxy: Cash + AFS_Bonds 
-    assets = df[df["type"] == "asset"].copy()
-    hqla = 0.0
-    for _, r in assets.iterrows():
-        if r["name"].lower() == "cash":
-            hqla += r["amount"]
-        elif r["category"] == "AFS":
-            hqla += r["amount"] * 0.90  
+def simple_liquidity_stress(
+    df: pd.DataFrame,
+    deposit_runoff: float = 0.15,
+    afs_haircut: float = 0.10
+) -> Dict[str, float]:
+    hqla = float(df.loc[df["is_cash"], "amount"].sum())
+    hqla += float((df.loc[df["is_afs"], "amount"] * (1.0 - afs_haircut)).sum())
 
-    deposits = df[(df["type"]=="liability") & (df["category"]=="DEPOSITS")]["amount"].sum()
-    stressed_outflows = deposits * deposit_runoff
+    deposits_amt = float(df.loc[df["is_deposit"], "amount"].sum())
+    stressed_out = abs(deposits_amt) * deposit_runoff
 
-    coverage = hqla / stressed_outflows if stressed_outflows else float("inf")
+    coverage = (hqla / stressed_out) if stressed_out else float("inf")
+
     return {
         "hqla": float(hqla),
-        "stressed_outflows": float(stressed_outflows),
-        "coverage_ratio": float(coverage)
+        "stressed_outflows": float(stressed_out),
+        "coverage_ratio": float(coverage),
     }

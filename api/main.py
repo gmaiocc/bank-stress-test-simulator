@@ -34,11 +34,11 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "Bank Stress Test API. See /docs", "version": APP_VERSION}
+    return {"status": "ok", "message": "Bank Stress Test API. See /docs", "version": "1.0.0"}
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "version": APP_VERSION}
+    return {"status": "healthy", "version": "1.0.0"}
 
 class StressParams(BaseModel):
     shocks_bps: List[int] = Field(default=[-200, -100, 0, 100, 200])
@@ -89,6 +89,10 @@ def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     if "stability" not in df.columns:
         df["stability"] = ""
     df["stability"] = df["stability"].astype(str).str.lower()
+
+    if "convexity" not in df.columns:
+        df["convexity"] = 0.0
+    df["convexity"] = pd.to_numeric(df["convexity"], errors="coerce").fillna(0.0).astype(float)
 
     def infer_side(row):
         c = row["category"].lower()
